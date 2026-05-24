@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     google_client_id: str | None = None  # Google OAuth client ID (token `aud`)
     apple_client_id: str | None = None  # Apple Services ID (token `aud`)
 
+    # App JWT / sessions (HS256, symmetric — single backend)
+    secret_key: str = "dev-insecure-secret-change-me"  # override via env in stage/prod
+    jwt_alg: str = "HS256"
+    jwt_iss: str = "crew-shop"
+    jwt_aud: str = "crew-shop"
+    access_token_ttl: int = 15 * 60  # seconds (~15 min)
+    refresh_token_ttl: int = 30 * 24 * 60 * 60  # seconds (~30 days)
+
     # Database - dev (simple URL string)
     database_url: str | None = None
 
