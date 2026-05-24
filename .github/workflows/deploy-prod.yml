@@ -1,0 +1,99 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage_image_tag:
+        description: "Stage image tag to promote (e.g., stage-abc1234)"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGION: europe-west1
+  SERVICE_NAME: crew-shop-backend-prod
+  REGISTRY: europe-west1-docker.pkg.dev
+  REPOSITORY: crew-shop-backend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCLOUD_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker to use Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Set image paths
+        id: image
+        run: |
+          STAGE_IMAGE_NAME="crew-shop-backend-stage"
+          STAGE_IMAGE="${{ env.REGISTRY }}/${{ secrets.GCLOUD_PROJECT_ID }}/${{ env.REPOSITORY }}/${STAGE_IMAGE_NAME}:${{ inputs.stage_image_tag }}"
+
+          PROD_IMAGE_NAME="crew-shop-backend-prod"
+          SHA=$(echo "${{ inputs.stage_image_tag }}" | sed 's/stage-//')
+          PROD_TAG="prod-${SHA}"
+          PROD_IMAGE="${{ env.REGISTRY }}/${{ secrets.GCLOUD_PROJECT_ID }}/${{ env.REPOSITORY }}/${PROD_IMAGE_NAME}"
+
+          echo "stage=${STAGE_IMAGE}" >> $GITHUB_OUTPUT
+          echo "prod_base=${PROD_IMAGE}" >> $GITHUB_OUTPUT
+          echo "prod_tag=${PROD_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Validate stage image exists
+        run: |
+          echo "Checking if stage image exists: ${{ steps.image.outputs.stage }}"
+          if ! gcloud artifacts docker images describe "${{ steps.image.outputs.stage }}" --format="get(name)" > /dev/null 2>&1; then
+            echo "::error::Stage image not found: ${{ steps.image.outputs.stage }}"
+            exit 1
+          fi
+          echo "Stage image validated"
+
+      - name: Tag image for production
+        run: |
+          echo "Pulling stage image..."
+          docker pull "${{ steps.image.outputs.stage }}"
+
+          echo "Tagging as production..."
+          docker tag "${{ steps.image.outputs.stage }}" "${{ steps.image.outputs.prod_base }}:${{ steps.image.outputs.prod_tag }}"
+
+          echo "Pushing production tag..."
+          docker push "${{ steps.image.outputs.prod_base }}:${{ steps.image.outputs.prod_tag }}"
+
+          echo "::notice::Promoted ${{ inputs.stage_image_tag }} to production"
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          image: ${{ steps.image.outputs.prod_base }}:${{ steps.image.outputs.prod_tag }}
+          region: ${{ env.REGION }}
+          flags: '--allow-unauthenticated --min-instances=1 --max-instances=100 --memory=1Gi --cpu=2 --add-cloudsql-instances=${{ secrets.DATABASE_HOST }}'
+          env_vars: |
+            ENV=prod
+            LOG_LEVEL=INFO
+            DATABASE_USER=${{ secrets.DATABASE_USER }}
+            DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+            DATABASE_NAME=${{ secrets.DATABASE_NAME }}
+            DATABASE_HOST=${{ secrets.DATABASE_HOST }}
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
+            CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
+
+      - name: Output deployment info
+        run: |
+          echo "::notice::Production deployment successful!"
+          echo "::notice::Stage tag: ${{ inputs.stage_image_tag }}"
+          echo "::notice::Prod tag: ${{ steps.image.outputs.prod_tag }}"
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "::notice::Service URL: ${URL}"
