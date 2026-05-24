@@ -49,3 +49,7 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+filterwarnings = [
+    # Intentional: a test replays a captured cookie on one request to assert revocation.
+    "ignore:Setting per-request cookies:DeprecationWarning",
+]

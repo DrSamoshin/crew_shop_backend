@@ -32,3 +32,24 @@ class InvalidProviderError(AppException):
             f"Unsupported auth provider: {provider}" if provider else "Unsupported auth provider"
         )
         super().__init__(message, status_code=400, error_code="AUTH_INVALID_PROVIDER")
+
+
+class UserNotFoundError(AppException):
+    """No account is linked to the verified provider identity (client should register)."""
+
+    def __init__(self, message: str = "No account found for this identity") -> None:
+        super().__init__(message, status_code=404, error_code="AUTH_USER_NOT_FOUND")
+
+
+class OAuthAccountExistsError(AppException):
+    """The provider identity is already linked to an account."""
+
+    def __init__(self, message: str = "An account already exists for this identity") -> None:
+        super().__init__(message, status_code=409, error_code="AUTH_OAUTH_ACCOUNT_EXISTS")
+
+
+class CsrfValidationError(AppException):
+    """Missing or mismatched CSRF token on a cookie-authenticated request."""
+
+    def __init__(self, message: str = "CSRF validation failed") -> None:
+        super().__init__(message, status_code=403, error_code="AUTH_CSRF_INVALID")
