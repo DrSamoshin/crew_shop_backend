@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:17
+    container_name: crew_shop_db
+    environment:
+      POSTGRES_USER: crew_shop
+      POSTGRES_PASSWORD: crew_shop
+      POSTGRES_DB: crew_shop_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crew_shop -d crew_shop_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: crew_shop_backend
+    env_file: .env.dev
+    environment:
+      # Inside compose the database host is the service name `db`, not localhost.
+      DATABASE_URL: postgresql+asyncpg://crew_shop:crew_shop@db:5432/crew_shop_db
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount source for hot reload (runner.py runs uvicorn --reload in dev).
+      - ./src:/app/src
+      - ./runner.py:/app/runner.py
+
+volumes:
+  pgdata:

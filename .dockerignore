@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments (rebuilt inside the image; never copy the host one)
+.venv
+env/
+venv/
+
+# Secrets (provided via compose env_file / environment, never baked in)
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+
+# Git
+.git/
+.gitignore
+
+# Testing / caches
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+coverage.xml
+
+# Logs
+*.log
+
+# Docker
+docker/
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github/
+
+# Project specific
+tests/
+.python-version
+README.md
+LICENSE
+
+# Documentation
+docs/
+crew_docs/
