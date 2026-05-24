@@ -40,3 +40,4 @@ htmlcov/
 
 # macOS
 .DS_Store
+.secrets/
