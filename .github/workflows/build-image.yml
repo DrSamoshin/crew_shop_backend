@@ -5,7 +5,7 @@ on:
 
 env:
   REGISTRY: europe-west1-docker.pkg.dev
-  REPOSITORY: crew-shop-backend
+  REPOSITORY: crew-shop-service
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
         run: |
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
           IMAGE_TAG="prod-${SHORT_SHA}"
-          IMAGE_NAME="crew-shop-backend-prod"
+          IMAGE_NAME="crew-shop-service-prod"
           FULL_IMAGE="${{ env.REGISTRY }}/${{ secrets.GCLOUD_PROJECT_ID }}/${{ env.REPOSITORY }}/${IMAGE_NAME}:${IMAGE_TAG}"
           echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "full=${FULL_IMAGE}" >> $GITHUB_OUTPUT

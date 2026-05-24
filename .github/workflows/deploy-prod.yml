@@ -14,9 +14,9 @@ concurrency:
 
 env:
   REGION: europe-west1
-  SERVICE_NAME: crew-shop-backend-prod
+  SERVICE_NAME: crew-shop-service-prod
   REGISTRY: europe-west1-docker.pkg.dev
-  REPOSITORY: crew-shop-backend
+  REPOSITORY: crew-shop-service
 
 jobs:
   deploy:
@@ -34,7 +34,7 @@ jobs:
       - name: Set image path
         id: image
         run: |
-          IMAGE_NAME="crew-shop-backend-prod"
+          IMAGE_NAME="crew-shop-service-prod"
           FULL_IMAGE="${{ env.REGISTRY }}/${{ secrets.GCLOUD_PROJECT_ID }}/${{ env.REPOSITORY }}/${IMAGE_NAME}:${{ inputs.image_tag }}"
           echo "full=${FULL_IMAGE}" >> $GITHUB_OUTPUT
 
