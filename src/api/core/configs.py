@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     workers: int = 4
 
+    # OAuth providers (server-side ID-token verification)
+    google_client_id: str | None = None  # Google OAuth client ID (token `aud`)
+    apple_client_id: str | None = None  # Apple Services ID (token `aud`)
+
     # Database - dev (simple URL string)
     database_url: str | None = None
 
