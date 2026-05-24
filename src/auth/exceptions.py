@@ -17,6 +17,13 @@ class ProviderVerificationFailedError(AppException):
         super().__init__(message, status_code=401, error_code="AUTH_PROVIDER_VERIFICATION_FAILED")
 
 
+class SessionRevokedError(AppException):
+    """The session is revoked, expired, or missing (e.g. after logout or refresh reuse)."""
+
+    def __init__(self, message: str = "Session is no longer valid") -> None:
+        super().__init__(message, status_code=401, error_code="AUTH_SESSION_REVOKED")
+
+
 class InvalidProviderError(AppException):
     """The requested provider is not supported."""
 

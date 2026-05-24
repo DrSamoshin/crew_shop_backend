@@ -1,12 +1,16 @@
 """OAuth account model linking a user to an external provider identity."""
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     UUID,
+    Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
     text,
@@ -51,3 +55,35 @@ class OAuthAccount(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<OAuthAccount(id={self.id}, provider={self.provider}, user_id={self.user_id})>"
+
+
+class Session(Base, TimestampMixin):
+    """Server-side session backing the app's JWT tokens.
+
+    ``id`` is the token ``session_id``; protected requests look it up to enforce
+    immediate logout. ``refresh_jti`` is rotated on every refresh — a presented
+    refresh whose jti does not match is a reuse, and the session is revoked.
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID, primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    refresh_jti: Mapped[uuid.UUID] = mapped_column(UUID, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user: Mapped["User"] = relationship(lazy="noload")
+
+    __table_args__ = (Index("idx_sessions_user_id", "user_id"),)
+
+    def __repr__(self) -> str:
+        return f"<Session(id={self.id}, user_id={self.user_id}, is_active={self.is_active})>"

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     apple_client_id: str | None = None  # Apple Services ID (token `aud`)
 
     # App JWT / sessions (HS256, symmetric — single backend)
-    secret_key: str = "dev-insecure-secret-change-me"  # override via env in stage/prod
+    secret_key: str = "dev-insecure-secret-change-me-in-prod"  # >=32B; override via env
     jwt_alg: str = "HS256"
     jwt_iss: str = "crew-shop"
     jwt_aud: str = "crew-shop"
