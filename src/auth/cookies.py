@@ -17,7 +17,10 @@ from src.auth.exceptions import CsrfValidationError
 REFRESH_COOKIE = "refresh_token"
 CSRF_COOKIE = "csrf_token"
 CSRF_HEADER = "X-CSRF-Token"
-COOKIE_PATH = "/v1/auth"
+# Refresh cookie is scoped to the auth routes; the CSRF cookie must be readable by the
+# SPA at `/` via document.cookie for the double-submit, so it is path "/".
+REFRESH_COOKIE_PATH = "/v1/auth"
+CSRF_COOKIE_PATH = "/"
 _SAMESITE: Literal["lax", "strict", "none"] = "lax"
 
 
@@ -36,23 +39,23 @@ def set_auth_cookies(response: Response, refresh_token: str) -> None:
         httponly=True,
         secure=_secure(),
         samesite=_SAMESITE,
-        path=COOKIE_PATH,
+        path=REFRESH_COOKIE_PATH,
     )
     response.set_cookie(
         CSRF_COOKIE,
         secrets.token_urlsafe(32),
         max_age=max_age,
-        httponly=False,
+        httponly=False,  # readable by the SPA for the double-submit header
         secure=_secure(),
         samesite=_SAMESITE,
-        path=COOKIE_PATH,
+        path=CSRF_COOKIE_PATH,
     )
 
 
 def clear_auth_cookies(response: Response) -> None:
     """Clear the refresh and CSRF cookies (called on logout)."""
-    response.delete_cookie(REFRESH_COOKIE, path=COOKIE_PATH)
-    response.delete_cookie(CSRF_COOKIE, path=COOKIE_PATH)
+    response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH)
+    response.delete_cookie(CSRF_COOKIE, path=CSRF_COOKIE_PATH)
 
 
 async def require_csrf(request: Request) -> None:
