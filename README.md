@@ -6,24 +6,25 @@ Python 3.13 / FastAPI service. Deployed and versioned independently of the web c
 
 ## Local development with Docker
 
-Runs the backend and PostgreSQL 17 with a single command, with hot reload and persistent database data.
+Runs PostgreSQL 17 + the backend with a single command. The database is **ephemeral**
+(tmpfs): a one-shot `init` service migrates and seeds it on every start, and nothing
+persists across runs.
 
 ```bash
 cp .env.example .env.dev        # first time only; .env.* is git-ignored
-docker compose up --build       # starts db (Postgres 17) + backend
+docker compose up --build       # db (Postgres 17) -> init (migrate + seed) -> backend
 ```
 
 - API: http://localhost:8080 — `GET /v1/health/live` → `{"status":"ok"}`; docs at `/docs`.
-- The backend waits for the database to be healthy before starting.
+- Startup order: `db` becomes healthy → `init` runs `alembic upgrade head` + `python -m scripts.seed_dev` and exits → `backend` serves.
 - Editing files under `src/` hot-reloads the backend.
 - Inside compose `DATABASE_URL` points at the `db` service (overridden in `docker-compose.yml`); the host is the compose service name, not `localhost`.
 
 ```bash
-docker compose down             # stop (database data persists in the pgdata volume)
-docker compose down -v          # stop and wipe the database
+docker compose down             # stop; the database is dropped (tmpfs), re-seeded next `up`
 ```
 
-The production image uses the same `docker/Dockerfile`; for prod build with `uv sync --frozen --no-dev` and without the source mount.
+The production image uses the same `docker/Dockerfile`; for prod build with `uv sync --frozen --no-dev`, without the source mount, and **without** the seed/init service.
 
 ## Database migrations (Alembic)
 

@@ -4,18 +4,18 @@
 
 ```bash
 cp .env.example .env.dev        # first time only (.env.* is git-ignored; .env.dev already present)
-docker compose up --build       # build and start db + backend (foreground)
+docker compose up --build       # db -> init (migrate + seed) -> backend (foreground)
 docker compose up --build -d    # same, detached (background)
 ```
 
 - API: http://localhost:8080 — `GET /v1/health/live` → `{"status":"ok"}`; docs at `/docs`.
-- Backend starts only after the database is healthy; edits under `src/` hot-reload.
+- The database is ephemeral (tmpfs); the `init` service migrates + seeds it on every start.
 
 ```bash
 docker compose logs -f backend  # follow backend logs
+docker compose logs init        # init (migrate + seed) output
 docker compose ps               # container status
-docker compose down             # stop (database data persists in the pgdata volume)
-docker compose down -v          # stop and wipe the database
+docker compose down             # stop; the database is dropped (tmpfs), re-seeded next `up`
 ```
 
 ## Run without Docker

@@ -1,3 +1,15 @@
+# Local dev stack: ephemeral Postgres (tmpfs) + one-shot init (migrate + seed) + backend.
+# The database is recreated, migrated and re-seeded on every `up` — nothing persists.
+
+x-backend-image: &backend-image
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+
+x-db-url: &db-url
+  # Inside compose the database host is the service name `db`, not localhost.
+  DATABASE_URL: postgresql+asyncpg://crew_shop:crew_shop@db:5432/crew_shop_db
+
 services:
   db:
     image: postgres:17
@@ -8,32 +20,37 @@ services:
       POSTGRES_DB: crew_shop_db
     ports:
       - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      # Ephemeral storage — a fresh database on every start.
+      - /var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U crew_shop -d crew_shop_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  backend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-    container_name: crew_shop_backend
+  init:
+    <<: *backend-image
+    container_name: crew_shop_init
     env_file: .env.dev
-    environment:
-      # Inside compose the database host is the service name `db`, not localhost.
-      DATABASE_URL: postgresql+asyncpg://crew_shop:crew_shop@db:5432/crew_shop_db
-    ports:
-      - "8080:8080"
+    environment: *db-url
+    command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed_dev"]
+    restart: "no"
     depends_on:
       db:
         condition: service_healthy
+
+  backend:
+    <<: *backend-image
+    container_name: crew_shop_backend
+    env_file: .env.dev
+    environment: *db-url
+    ports:
+      - "8080:8080"
+    depends_on:
+      init:
+        condition: service_completed_successfully
     volumes:
       # Mount source for hot reload (runner.py runs uvicorn --reload in dev).
       - ./src:/app/src
       - ./runner.py:/app/runner.py
-
-volumes:
-  pgdata:
