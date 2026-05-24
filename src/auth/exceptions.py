@@ -46,10 +46,3 @@ class OAuthAccountExistsError(AppException):
 
     def __init__(self, message: str = "An account already exists for this identity") -> None:
         super().__init__(message, status_code=409, error_code="AUTH_OAUTH_ACCOUNT_EXISTS")
-
-
-class CsrfValidationError(AppException):
-    """Missing or mismatched CSRF token on a cookie-authenticated request."""
-
-    def __init__(self, message: str = "CSRF validation failed") -> None:
-        super().__init__(message, status_code=403, error_code="AUTH_CSRF_INVALID")

@@ -28,14 +28,21 @@ class RegisterRequest(BaseModel):
     name: str | None = None
 
 
+class RefreshRequest(BaseModel):
+    """Exchange a refresh token for a new access/refresh pair."""
+
+    refresh_token: str = Field(min_length=1)
+
+
 class TokenResponse(BaseModel):
-    """Token response body. The refresh token is delivered via an httpOnly cookie."""
+    """Token response body. Both tokens are returned in the body (no cookies)."""
 
     user_id: uuid.UUID
     access_token: str
+    refresh_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
     is_new_user: bool
 
 
-__all__ = ["LoginRequest", "RegisterRequest", "TokenResponse"]
+__all__ = ["LoginRequest", "RefreshRequest", "RegisterRequest", "TokenResponse"]
