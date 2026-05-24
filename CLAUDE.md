@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Backend service for **Crew Shop**, a specialty coffee online marketplace. Python 3.13 / FastAPI, deployed and versioned independently of the web client. Broader architecture docs live in a separate `my_docs` repo, locally at `/Users/siarheisamoshyn/Projects/my_docs/docs/wiki/topics/crew/crew_shop/` (topic `crew/crew_shop`, start at `overview/repositories.md`).
 
+## Working scope
+
+The focus is implementing the **backend**. Allowed: read and modify this backend repository, and read and update the `my_docs` wiki (task docs, statuses, entity specs per their stability rules). All other repositories / projects are **read-only** — read them for context (house-style, contracts), but never modify them.
+
+Do **not** use the persistent memory system. Record what was done in the relevant wiki task/docs, and capture any working rules here in this `CLAUDE.md`.
+
 ## Commands
 
 Dependencies are managed with **uv** (`package = false` — this is an app, not a packaged library).

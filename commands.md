@@ -25,6 +25,21 @@ uv sync                         # install all deps (incl. dev group)
 uv run python runner.py         # run the API (dev: uvicorn w/ reload)
 ```
 
+## Stop the backend
+
+```bash
+# Docker
+docker compose down             # stop backend + db (data persists in pgdata)
+docker compose stop backend     # stop only the backend, keep db running
+
+# Foreground `uv run python runner.py`: press Ctrl+C in that terminal
+
+# Background / unknown: kill whatever listens on port 8080
+lsof -ti :8080 | xargs kill      # SIGTERM
+lsof -ti :8080 | xargs kill -9   # force, if it ignores SIGTERM
+pkill -f runner.py               # or by process name
+```
+
 ## Migrations (Alembic)
 
 ```bash
