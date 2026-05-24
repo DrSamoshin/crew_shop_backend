@@ -5,13 +5,12 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# Import model modules so their tables register on Base.metadata for autogenerate.
+import src.auth.models  # noqa: F401
+import src.users.models  # noqa: F401
 from alembic import context
 from src.api.core.configs import settings
 from src.api.core.database import Base
-
-# Import model modules here so their tables register on Base.metadata for
-# autogenerate. No domain models exist yet; feature tasks add their own, e.g.:
-#   import src.<domain>.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
