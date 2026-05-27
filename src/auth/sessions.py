@@ -8,6 +8,7 @@ refresh tokens are detected. Mutations are flushed, not committed — the reques
 import uuid
 from datetime import timedelta
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.core.configs import settings
@@ -58,3 +59,13 @@ async def logout(db: AsyncSession, session_id: uuid.UUID) -> None:
     if session is not None and session.is_active:
         session.is_active = False
         await db.flush()
+
+
+async def revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Revoke every active session for a user (full sign-out, e.g. on account deletion)."""
+    await db.execute(
+        update(Session)
+        .where(Session.user_id == user_id, Session.is_active.is_(True))
+        .values(is_active=False)
+    )
+    await db.flush()

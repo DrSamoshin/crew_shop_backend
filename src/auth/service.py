@@ -3,7 +3,7 @@
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth import providers, sessions
@@ -64,6 +64,12 @@ async def register(db: AsyncSession, provider: str, token: str, name: str | None
     await db.flush()
     access, refresh = await sessions.create_session(db, user.id)
     return AuthResult(user.id, access, refresh, is_new_user=True)
+
+
+async def delete_oauth_account(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Delete a user's OAuth identity (used by account hard-delete)."""
+    await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
+    await db.flush()
 
 
 def _display_name(identity: VerifiedIdentity, name: str | None) -> str:
