@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import (
 
 import src.auth.models  # noqa: F401 - register mappers on Base.metadata
 import src.catalog.models  # noqa: F401 - register mappers on Base.metadata
+import src.ratings.models  # noqa: F401 - register mappers on Base.metadata
 import src.users.models  # noqa: F401 - register mappers on Base.metadata
+from scripts import seed_dev
 from src.api.app import create_app
 from src.api.core.configs import settings
 from src.api.core.database import Base, get_db
@@ -72,6 +74,39 @@ async def client() -> AsyncGenerator[AsyncClient]:
     """An HTTP client against the app, wired to the fresh test database via get_db override."""
     engine = await _fresh_test_engine()
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def _override_get_db() -> AsyncGenerator[AsyncSession]:
+        async with maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app = create_app()
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as http_client:
+            yield http_client
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def seeded_client() -> AsyncGenerator[AsyncClient]:
+    """A client whose fresh test database is loaded with the deterministic dev seed."""
+    engine = await _fresh_test_engine()
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with maker() as session:
+        await seed_dev.seed_users(session)
+        await seed_dev.seed_catalog(session)
+        await seed_dev.seed_ratings(session)
+        await session.commit()
 
     async def _override_get_db() -> AsyncGenerator[AsyncSession]:
         async with maker() as session:

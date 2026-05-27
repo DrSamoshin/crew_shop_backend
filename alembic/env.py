@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Import model modules so their tables register on Base.metadata for autogenerate.
 import src.auth.models  # noqa: F401
 import src.catalog.models  # noqa: F401
+import src.ratings.models  # noqa: F401
 import src.users.models  # noqa: F401
 from alembic import context
 from src.api.core.configs import settings

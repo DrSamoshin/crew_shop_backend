@@ -10,6 +10,7 @@ Entry point: ``python -m scripts.seed_dev``.
 
 import asyncio
 import logging
+import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -38,6 +39,8 @@ from src.catalog.models import (
     ProductEquipment,
     ProductType,
 )
+from src.ratings.models import Rating
+from src.ratings.service import recalculate_product_rating
 from src.users.models import User, UserPreferences
 
 logger = logging.getLogger("scripts.seed_dev")
@@ -585,16 +588,81 @@ async def seed_catalog(session: AsyncSession) -> int:
     return created
 
 
+# ------------------------------------------------------------------------- ratings
+
+
+@dataclass(frozen=True, slots=True)
+class RatingSpec:
+    """A seed rating: a seed user (by OAuth provider_id) rating a product (by name)."""
+
+    product: str
+    provider_id: str
+    score: int
+
+
+# A subset of products is rated by the seed users; the rest stay unrated so the catalog
+# exercises both the "has rating" and "no rating" paths.
+SEED_RATINGS: tuple[RatingSpec, ...] = (
+    RatingSpec("Ethiopia Yirgacheffe", "seed-google-0001", 5),
+    RatingSpec("Ethiopia Yirgacheffe", "107265641798951898114", 4),
+    RatingSpec("Colombia Huila", "seed-google-0001", 4),
+    RatingSpec("Colombia Huila", "107265641798951898114", 4),
+    RatingSpec("Brazil Cerrado", "seed-google-0001", 3),
+    RatingSpec("Kenya Nyeri AA", "107265641798951898114", 5),
+    RatingSpec("Gaggia Classic Pro", "seed-google-0001", 5),
+    RatingSpec("Gaggia Classic Pro", "107265641798951898114", 4),
+    RatingSpec("Baratza Encore Grinder", "seed-google-0001", 4),
+)
+
+
+async def seed_ratings(session: AsyncSession) -> int:
+    """Create seed ratings and rebuild the affected aggregates. Idempotent per (product, user)."""
+    user_by_provider = {
+        provider_id: user_id
+        for provider_id, user_id in (
+            await session.execute(select(OAuthAccount.provider_id, OAuthAccount.user_id))
+        ).all()
+    }
+    product_ids: dict[str, uuid.UUID | None] = {}
+    affected: set[uuid.UUID] = set()
+    created = 0
+
+    for spec in SEED_RATINGS:
+        if spec.product not in product_ids:
+            product_ids[spec.product] = await session.scalar(
+                select(Product.id).where(Product.name == spec.product)
+            )
+        product_id = product_ids[spec.product]
+        user_id = user_by_provider.get(spec.provider_id)
+        if product_id is None or user_id is None:
+            continue
+        exists = await session.scalar(
+            select(Rating.id).where(Rating.product_id == product_id, Rating.user_id == user_id)
+        )
+        if exists is not None:
+            continue
+        session.add(Rating(product_id=product_id, user_id=user_id, rating=spec.score))
+        affected.add(product_id)
+        created += 1
+
+    await session.flush()
+    for product_id in affected:
+        await recalculate_product_rating(session, product_id)
+    return created
+
+
 async def _run() -> None:
     async with async_session_maker() as session:
         users_created = await seed_users(session)
         catalog_created = await seed_catalog(session)
+        ratings_created = await seed_ratings(session)
         await session.commit()
     logger.info(
-        "seed summary: users=%d/%d created, catalog rows created=%d",
+        "seed summary: users=%d/%d created, catalog rows=%d, ratings=%d",
         users_created,
         len(SEED_USERS),
         catalog_created,
+        ratings_created,
     )
 
 
