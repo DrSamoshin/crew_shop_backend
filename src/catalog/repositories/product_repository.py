@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy import ColumnExpressionArgument, Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm.interfaces import ORMOption
 
 from src.catalog.models import Product, ProductCoffee
 from src.catalog.schemas.catalog import AcidityBucket, ProductFilters, SortOption
@@ -23,14 +24,21 @@ _ACIDITY_RANGES: dict[AcidityBucket, tuple[int, int]] = {
     AcidityBucket.BRIGHT: (4, 5),
 }
 
-_EAGER = (
-    selectinload(Product.coffee),
-    selectinload(Product.equipment),
-    selectinload(Product.accessory),
-    selectinload(Product.consumable),
-    joinedload(Product.category),
-    joinedload(Product.product_type),
-)
+
+def _eager_options() -> tuple[ORMOption, ...]:
+    """Eager-load the category, type, and every attribute subtype.
+
+    Built lazily (not at import): constructing loader options triggers mapper configuration,
+    which must happen at request time once all model modules are registered.
+    """
+    return (
+        selectinload(Product.coffee),
+        selectinload(Product.equipment),
+        selectinload(Product.accessory),
+        selectinload(Product.consumable),
+        joinedload(Product.category),
+        joinedload(Product.product_type),
+    )
 
 
 def _order_by(sort: SortOption) -> tuple[ColumnExpressionArgument[object], ...]:
@@ -103,7 +111,7 @@ class ProductRepository:
         stmt = (
             base.add_columns(ProductRating)
             .outerjoin(ProductRating, ProductRating.product_id == Product.id)
-            .options(*_EAGER)
+            .options(*_eager_options())
             .order_by(*order_by)
             .limit(limit)
             .offset(offset)
@@ -124,7 +132,9 @@ class ProductRepository:
             select(Product, ProductRating)
             .outerjoin(ProductRating, ProductRating.product_id == Product.id)
             .where(Product.id == product_id)
-            .options(*_EAGER)
+            .options(*_eager_options())
+            # Read-after-write: refresh relationships on any instance already in the session.
+            .execution_options(populate_existing=True)
         )
         row = (await self._db.execute(stmt)).unique().one_or_none()
         return (row[0], row[1]) if row is not None else None

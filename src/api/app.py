@@ -4,6 +4,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+import src.auth.models  # noqa: F401 - register all mappers before relationships resolve
+import src.catalog.models  # noqa: F401
+import src.ratings.models  # noqa: F401
+import src.users.models  # noqa: F401
 from src.api.core.configs import settings
 from src.api.core.database import close_db
 from src.api.exception_handlers import setup_exception_handlers

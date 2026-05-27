@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     google_client_id: str | None = None  # Google OAuth client ID (token `aud`)
     apple_client_id: str | None = None  # Apple Services ID (token `aud`)
 
+    # Admin S2S (crew_admin → admin API). Per-environment shared service token; unset
+    # disables the admin API entirely (every request is rejected).
+    admin_service_token: str | None = None
+
     # App JWT / sessions (HS256, symmetric — single backend)
     secret_key: str = "dev-insecure-secret-change-me-in-prod"  # >=32B; override via env
     jwt_alg: str = "HS256"
