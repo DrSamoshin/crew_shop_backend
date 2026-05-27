@@ -40,17 +40,17 @@ services:
       db:
         condition: service_healthy
 
-  backend:
-    <<: *backend-image
-    container_name: crew_shop_backend
-    env_file: .env.dev
-    environment: *db-url
-    ports:
-      - "8080:8080"
-    depends_on:
-      init:
-        condition: service_completed_successfully
-    volumes:
-      # Mount source for hot reload (runner.py runs uvicorn --reload in dev).
-      - ./src:/app/src
-      - ./runner.py:/app/runner.py
+#  backend:
+#    <<: *backend-image
+#    container_name: crew_shop_backend
+#    env_file: .env.dev
+#    environment: *db-url
+#    ports:
+#      - "8080:8080"
+#    depends_on:
+#      init:
+#        condition: service_completed_successfully
+#    volumes:
+#      # Mount source for hot reload (runner.py runs uvicorn --reload in dev).
+#      - ./src:/app/src
+#      - ./runner.py:/app/runner.py
