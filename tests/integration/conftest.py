@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import (
 
 import src.auth.models  # noqa: F401 - register mappers on Base.metadata
 import src.catalog.models  # noqa: F401 - register mappers on Base.metadata
+import src.orders.models  # noqa: F401 - register mappers on Base.metadata
+import src.points.models  # noqa: F401 - register mappers on Base.metadata
 import src.ratings.models  # noqa: F401 - register mappers on Base.metadata
 import src.users.models  # noqa: F401 - register mappers on Base.metadata
 from scripts import seed_dev
@@ -91,6 +93,36 @@ async def client() -> AsyncGenerator[AsyncClient]:
             transport=ASGITransport(app=app), base_url="http://test"
         ) as http_client:
             yield http_client
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client_db() -> AsyncGenerator[tuple[AsyncClient, async_sessionmaker[AsyncSession]]]:
+    """A client plus the session maker bound to the *same* fresh test database.
+
+    Lets a test seed/inspect rows (and mint auth tokens) directly while exercising the HTTP API.
+    """
+    engine = await _fresh_test_engine()
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def _override_get_db() -> AsyncGenerator[AsyncSession]:
+        async with maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app = create_app()
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as http_client:
+            yield http_client, maker
     finally:
         app.dependency_overrides.clear()
         await engine.dispose()

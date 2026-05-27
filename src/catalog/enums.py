@@ -2,6 +2,18 @@
 
 import enum
 
+from src.api.core.utils import sql_str_list as _quote_csv
+
+__all__ = [
+    "AccessoryType",
+    "ConsumableType",
+    "EquipmentType",
+    "ProcessingMethod",
+    "ProductTypeName",
+    "RoastLevel",
+    "_quote_csv",
+]
+
 
 class ProductTypeName(enum.StrEnum):
     """The four product types; each has its own attribute subtype table."""
@@ -59,8 +71,3 @@ class ConsumableType(enum.StrEnum):
     CLEANING = "cleaning"
     WATER = "water"
     OTHER = "other"
-
-
-def _quote_csv(values: type[enum.StrEnum]) -> str:
-    """Render an enum's values as a SQL string list, e.g. ``'a', 'b'`` for IN checks."""
-    return ", ".join(f"'{member.value}'" for member in values)

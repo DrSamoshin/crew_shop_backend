@@ -12,13 +12,16 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from decimal import Decimal
+from datetime import timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.core.configs import settings
 from src.api.core.database import async_session_maker
+from src.api.core.utils import utcnow
 from src.auth.enums import Provider
 from src.auth.models import OAuthAccount
 from src.catalog.enums import (
@@ -39,6 +42,10 @@ from src.catalog.models import (
     ProductEquipment,
     ProductType,
 )
+from src.orders.enums import GrindSize, OrderType
+from src.orders.models import Order, OrderPickupInfo, OrderProduct
+from src.points.enums import PointType
+from src.points.models import Point
 from src.ratings.models import Rating
 from src.ratings.service import recalculate_product_rating
 from src.users.models import User, UserPreferences
@@ -651,18 +658,156 @@ async def seed_ratings(session: AsyncSession) -> int:
     return created
 
 
+# -------------------------------------------------------------------------- points
+
+_WEEK = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+@dataclass(frozen=True, slots=True)
+class PointSpec:
+    name: str
+    address: str
+    type: str
+    hours: dict[str, Any]
+    contacts: dict[str, Any]
+
+
+SEED_POINTS: tuple[PointSpec, ...] = (
+    PointSpec(
+        name="Crew Coffee Downtown",
+        address="vul. Khreshchatyk 1, Kyiv",
+        type=PointType.COFFEESHOP,
+        hours={day: {"open": "08:00", "close": "20:00"} for day in _WEEK},
+        contacts={"phone": "+380441234567", "email": "downtown@crew.shop"},
+    ),
+)
+
+
+async def seed_points(session: AsyncSession) -> int:
+    """Create the baseline pickup points (idempotent by name). Returns the count created."""
+    created = 0
+    for spec in SEED_POINTS:
+        existing = await session.scalar(select(Point.id).where(Point.name == spec.name))
+        if existing is not None:
+            continue
+        session.add(
+            Point(
+                name=spec.name,
+                address=spec.address,
+                type=spec.type,
+                hours=spec.hours,
+                contacts=spec.contacts,
+            )
+        )
+        created += 1
+    await session.flush()
+    return created
+
+
+# -------------------------------------------------------------------------- orders
+
+
+@dataclass(frozen=True, slots=True)
+class OrderItemSpec:
+    """A line item by seed product name; ``grind`` only for coffee."""
+
+    product: str
+    quantity: int
+    grind: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OrderSpec:
+    """A sample pickup order: a seed user, a seed point, and items. Keyed by ``pickup_code``."""
+
+    provider_id: str
+    point: str
+    pickup_code: str
+    items: tuple[OrderItemSpec, ...]
+
+
+SEED_ORDERS: tuple[OrderSpec, ...] = (
+    OrderSpec(
+        provider_id="seed-google-0001",
+        point="Crew Coffee Downtown",
+        pickup_code="100001",
+        items=(
+            OrderItemSpec("Ethiopia Yirgacheffe", 2, GrindSize.MEDIUM),
+            OrderItemSpec("Hario V60 02 Ceramic", 1),
+        ),
+    ),
+)
+
+
+async def seed_orders(session: AsyncSession) -> int:
+    """Create sample pickup orders (idempotent by ``pickup_code``). Returns the count created."""
+    created = 0
+    for spec in SEED_ORDERS:
+        exists = await session.scalar(
+            select(OrderPickupInfo.id).where(OrderPickupInfo.pickup_code == spec.pickup_code)
+        )
+        if exists is not None:
+            continue
+        user_id = await session.scalar(
+            select(OAuthAccount.user_id).where(OAuthAccount.provider_id == spec.provider_id)
+        )
+        point_id = await session.scalar(select(Point.id).where(Point.name == spec.point))
+        if user_id is None or point_id is None:
+            continue
+
+        line_rows: list[OrderProduct] = []
+        total = Decimal("0.00")
+        for item in spec.items:
+            product = await session.scalar(select(Product).where(Product.name == item.product))
+            if product is None:
+                break
+            total += product.price * item.quantity
+            line_rows.append(
+                OrderProduct(
+                    product_id=product.id,
+                    product_name=product.name,
+                    product_price=product.price,
+                    quantity=item.quantity,
+                    grind=item.grind,
+                )
+            )
+        if len(line_rows) != len(spec.items):
+            continue
+
+        order = Order(
+            user_id=user_id,
+            order_type=OrderType.PICKUP,
+            total_price=total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        )
+        order.products = line_rows
+        order.pickup_info = OrderPickupInfo(
+            point_id=point_id,
+            pickup_code=spec.pickup_code,
+            pickup_deadline=utcnow() + timedelta(hours=24),
+        )
+        session.add(order)
+        created += 1
+
+    await session.flush()
+    return created
+
+
 async def _run() -> None:
     async with async_session_maker() as session:
         users_created = await seed_users(session)
         catalog_created = await seed_catalog(session)
         ratings_created = await seed_ratings(session)
+        points_created = await seed_points(session)
+        orders_created = await seed_orders(session)
         await session.commit()
     logger.info(
-        "seed summary: users=%d/%d created, catalog rows=%d, ratings=%d",
+        "seed summary: users=%d/%d created, catalog rows=%d, ratings=%d, points=%d, orders=%d",
         users_created,
         len(SEED_USERS),
         catalog_created,
         ratings_created,
+        points_created,
+        orders_created,
     )
 
 
