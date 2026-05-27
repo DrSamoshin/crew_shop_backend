@@ -12,11 +12,11 @@ async def test_seed_is_idempotent(db_session: AsyncSession) -> None:
     created_first = await seed_dev.seed(db_session)
     created_again = await seed_dev.seed(db_session)
 
-    assert created_first is True
-    assert created_again is False
+    assert created_first == len(seed_dev.SEED_USERS)
+    assert created_again == 0
 
     count = await db_session.scalar(select(func.count()).select_from(User))
-    assert count == 1
+    assert count == len(seed_dev.SEED_USERS)
 
 
 def test_seed_refuses_outside_dev_test(monkeypatch: pytest.MonkeyPatch) -> None:
