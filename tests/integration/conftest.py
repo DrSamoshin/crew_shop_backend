@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 import src.auth.models  # noqa: F401 - register mappers on Base.metadata
+import src.catalog.models  # noqa: F401 - register mappers on Base.metadata
 import src.users.models  # noqa: F401 - register mappers on Base.metadata
 from src.api.app import create_app
 from src.api.core.configs import settings
