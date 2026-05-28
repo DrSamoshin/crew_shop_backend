@@ -8,6 +8,7 @@ from src.api.v1.routers.orders import router as orders_router
 from src.api.v1.routers.points import router as points_router
 from src.api.v1.routers.ratings import me_router as my_ratings_router
 from src.api.v1.routers.ratings import router as ratings_router
+from src.api.v1.routers.subscriptions import router as subscriptions_router
 from src.api.v1.routers.users import router as users_router
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "orders_router",
     "points_router",
     "ratings_router",
+    "subscriptions_router",
     "users_router",
 ]
