@@ -17,8 +17,8 @@ async def _make_point(
         name=name,
         address=f"{name} address",
         type=type_,
-        hours={"mon": {"open": "09:00", "close": "18:00"}},
-        contacts={"phone": "+380441234567"},
+        hours={"monday": {"open": "09:00", "close": "18:00"}},
+        contacts={"phone": "+380441234567", "email": "shop@crew.shop"},
         is_active=is_active,
     )
     s.add(point)
@@ -42,7 +42,12 @@ async def test_list_returns_only_active_coffeeshops(
     assert body["total"] == 1
     assert body["items"][0]["id"] == str(coffeeshop.id)
     assert body["items"][0]["name"] == "Downtown"
-    assert body["items"][0]["hours"] == {"mon": {"open": "09:00", "close": "18:00"}}
+    hours = body["items"][0]["hours"]
+    assert hours["monday"] == {"open": "09:00", "close": "18:00"}
+    assert hours["sunday"] is None
+    contacts = body["items"][0]["contacts"]
+    assert contacts["phone"] == "+380441234567"
+    assert contacts["email"] == "shop@crew.shop"
 
 
 async def test_list_orders_by_name(client_db: tuple[AsyncClient, Maker]) -> None:
