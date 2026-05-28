@@ -5,6 +5,7 @@ from src.api.v1.routers.auth import router as auth_router
 from src.api.v1.routers.catalog import router as catalog_router
 from src.api.v1.routers.health import router as health_router
 from src.api.v1.routers.orders import router as orders_router
+from src.api.v1.routers.payments import router as payments_router
 from src.api.v1.routers.points import router as points_router
 from src.api.v1.routers.ratings import me_router as my_ratings_router
 from src.api.v1.routers.ratings import router as ratings_router
@@ -20,6 +21,7 @@ __all__ = [
     "health_router",
     "my_ratings_router",
     "orders_router",
+    "payments_router",
     "points_router",
     "ratings_router",
     "subscriptions_router",

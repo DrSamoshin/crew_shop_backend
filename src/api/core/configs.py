@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # disables the admin API entirely (every request is rejected).
     admin_service_token: str | None = None
 
+    # Payment provider callback secret. The FakeProvider verifies webhook signatures with this
+    # value; a real provider plugs its own scheme in. Unset → callbacks are rejected.
+    payment_provider_secret: str | None = None
+
     # App JWT / sessions (HS256, symmetric — single backend)
     secret_key: str = "dev-insecure-secret-change-me-in-prod"  # >=32B; override via env
     jwt_alg: str = "HS256"
