@@ -8,6 +8,7 @@ from src.api.v1.routers import (
     health_router,
     my_ratings_router,
     orders_router,
+    points_router,
     ratings_router,
     users_router,
 )
@@ -22,5 +23,6 @@ api_router.include_router(admin_orders_router)
 api_router.include_router(users_router)
 api_router.include_router(ratings_router)
 api_router.include_router(my_ratings_router)
+api_router.include_router(points_router)
 
 __all__ = ["api_router"]
