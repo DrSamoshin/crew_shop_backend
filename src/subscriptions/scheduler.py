@@ -29,6 +29,8 @@ from src.api.core.database import async_session_maker
 from src.catalog.models import Product
 from src.orders.enums import OrderStatus, OrderType
 from src.orders.models import Order, OrderDeliveryInfo, OrderProduct
+from src.payments import billing as payment_billing
+from src.payments.provider import FakeProvider, PaymentProvider
 from src.subscriptions.enums import SubscriptionEventStatus, SubscriptionStatus
 from src.subscriptions.frequency import SubscriptionFrequency, next_dates_after
 from src.subscriptions.models import (
@@ -144,8 +146,17 @@ async def sync_completed_events(db: AsyncSession) -> int:
 # ----------------------------------------------------------------- extension
 
 
-async def extend_horizons(db: AsyncSession, *, today: date | None = None) -> int:
-    """Append a horizon's worth of events to active subscriptions running out of schedule."""
+async def extend_horizons(
+    db: AsyncSession,
+    *,
+    today: date | None = None,
+    provider: PaymentProvider | None = None,
+) -> int:
+    """Append a horizon's worth of events to active subscriptions running out of schedule.
+
+    If ``provider`` is supplied, each newly created event is also charged off-session through
+    it (a ``SubscriptionPayment`` is recorded per event); otherwise charges are deferred.
+    """
     cutoff = today or datetime.now(UTC).date()
     threshold = cutoff + timedelta(days=EXTEND_LOOKAHEAD_DAYS)
 
@@ -171,14 +182,20 @@ async def extend_horizons(db: AsyncSession, *, today: date | None = None) -> int
     rows = (await db.execute(stmt)).unique().all()
     extended = 0
     for sub, last_date in rows:
-        if not await _extend_subscription(db, sub, last_date):
+        if not await _extend_subscription(db, sub, last_date, provider=provider):
             continue
         extended += 1
     await db.flush()
     return extended
 
 
-async def _extend_subscription(db: AsyncSession, sub: Subscription, last_date: date) -> bool:
+async def _extend_subscription(
+    db: AsyncSession,
+    sub: Subscription,
+    last_date: date,
+    *,
+    provider: PaymentProvider | None = None,
+) -> bool:
     """Schedule the next horizon for ``sub``; returns ``False`` if extension is impossible."""
     if not sub.events:
         return False
@@ -213,17 +230,28 @@ async def _extend_subscription(db: AsyncSession, sub: Subscription, last_date: d
                 product_price=Decimal(price),
             )
         )
+        if provider is not None:
+            await payment_billing.charge_event_off_session(db, provider, sub, event)
     return True
 
 
 # --------------------------------------------------------------------- runner
 
 
-async def run_daily(db: AsyncSession, *, today: date | None = None) -> SchedulerRunSummary:
-    """The full daily pass: order due events, sync completed, then extend horizons."""
+async def run_daily(
+    db: AsyncSession,
+    *,
+    today: date | None = None,
+    provider: PaymentProvider | None = None,
+) -> SchedulerRunSummary:
+    """The full daily pass: order due events, sync completed, then extend horizons.
+
+    The optional ``provider`` is forwarded to ``extend_horizons`` so each appended event is
+    charged off-session — pass ``None`` to skip charging (tests, dev runs).
+    """
     processed = await process_due_events(db, today=today)
     synced = await sync_completed_events(db)
-    extended = await extend_horizons(db, today=today)
+    extended = await extend_horizons(db, today=today, provider=provider)
     return SchedulerRunSummary(
         processed_due=processed,
         synced_completed=synced,
@@ -234,7 +262,8 @@ async def run_daily(db: AsyncSession, *, today: date | None = None) -> Scheduler
 async def _main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     async with async_session_maker() as session:
-        summary = await run_daily(session)
+        # The CLI runner charges off-session via the active provider (FakeProvider for now).
+        summary = await run_daily(session, provider=FakeProvider())
         await session.commit()
     logger.info(
         "scheduler done: processed=%d synced=%d extended=%d",

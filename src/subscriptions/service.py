@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.catalog.models import Product
+from src.payments import billing as payment_billing
+from src.payments.exceptions import PaymentInvalidStateError
+from src.payments.provider import PaymentProvider
 from src.subscriptions.enums import SubscriptionEventStatus, SubscriptionStatus
 from src.subscriptions.exceptions import (
     SubscriptionAccessDeniedError,
@@ -102,8 +105,13 @@ def _list_item_dto(sub: Subscription) -> SubscriptionListItemDTO:
 
 
 class SubscriptionService:
-    def __init__(self, db: AsyncSession) -> None:
+    """Subscription orchestration. Pass a ``PaymentProvider`` to enable upfront charging on
+    create and cancellation refunds; without one those steps are skipped (legacy / test path).
+    """
+
+    def __init__(self, db: AsyncSession, provider: PaymentProvider | None = None) -> None:
         self._db = db
+        self._provider = provider
 
     # ------------------------------------------------------------------ reads
 
@@ -154,10 +162,17 @@ class SubscriptionService:
             raise SubscriptionProductInactiveError(str(data.product_id))
 
         today = datetime.now(UTC).date()
+        # Without a provider the subscription is activated immediately (legacy/test path).
+        # With one we keep it ``pending`` until the upfront charge settles.
+        initial_status = (
+            SubscriptionStatus.PENDING.value
+            if self._provider is not None
+            else SubscriptionStatus.ACTIVE.value
+        )
         sub = Subscription(
             user_id=user_id,
             frequency=data.frequency.value,
-            status=SubscriptionStatus.ACTIVE.value,
+            status=initial_status,
         )
         sub.delivery_info = SubscriptionDeliveryInfo(
             recipient_name=data.delivery.recipient_name,
@@ -194,6 +209,19 @@ class SubscriptionService:
 
         loaded = await self._load(sub.id)
         assert loaded is not None
+
+        if self._provider is not None:
+            charged = await payment_billing.charge_subscription_upfront(
+                self._db, self._provider, loaded
+            )
+            if not charged:
+                raise PaymentInvalidStateError(
+                    "Subscription upfront charge failed; subscription left inactive"
+                )
+            loaded.status = SubscriptionStatus.ACTIVE.value
+            await self._db.flush()
+            loaded = await self._load(sub.id)
+            assert loaded is not None
         return _subscription_dto(loaded)
 
     # ------------------------------------------------------------- transitions
@@ -231,6 +259,10 @@ class SubscriptionService:
             SubscriptionStatus.COMPLETED.value,
         }:
             raise SubscriptionInvalidStateError(sub.status, "cancel")
+        # Refund undelivered payments *before* the events are marked cancelled so the billing
+        # layer can identify them by status.
+        if self._provider is not None:
+            await payment_billing.refund_undelivered_payments(self._db, self._provider, sub)
         sub.status = SubscriptionStatus.CANCELLED.value
         _bulk_event_status(
             sub.events,

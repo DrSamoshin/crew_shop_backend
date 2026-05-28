@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.core.database import get_db
 from src.auth.dependencies import require_auth
+from src.payments.provider import PaymentProviderDep
 from src.subscriptions.schemas import (
     CreateSubscriptionRequest,
     SubscriptionDTO,
@@ -29,9 +30,12 @@ UserDep = Annotated[User, Depends(require_auth)]
     summary="Create a subscription",
 )
 async def create_subscription(
-    payload: CreateSubscriptionRequest, db: DbDep, user: UserDep
+    payload: CreateSubscriptionRequest,
+    db: DbDep,
+    user: UserDep,
+    provider: PaymentProviderDep,
 ) -> SubscriptionDTO:
-    return await SubscriptionService(db).create(user.id, payload)
+    return await SubscriptionService(db, provider=provider).create(user.id, payload)
 
 
 @router.get("", response_model=SubscriptionListDTO, summary="List the caller's subscriptions")
@@ -76,6 +80,6 @@ async def resume_subscription(
     summary="Cancel a subscription",
 )
 async def cancel_subscription(
-    subscription_id: uuid.UUID, db: DbDep, user: UserDep
+    subscription_id: uuid.UUID, db: DbDep, user: UserDep, provider: PaymentProviderDep
 ) -> SubscriptionDTO:
-    return await SubscriptionService(db).cancel(subscription_id, user.id)
+    return await SubscriptionService(db, provider=provider).cancel(subscription_id, user.id)
