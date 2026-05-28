@@ -2,6 +2,17 @@
 
 import enum
 
+# Payment status is shared with OrderPayment; the canonical definition lives in
+# ``src.payments.enums``. Re-exported here so callers that already import subscription
+# enums don't need to know.
+from src.payments.enums import PaymentStatus as SubscriptionPaymentStatus
+
+__all__ = [
+    "SubscriptionEventStatus",
+    "SubscriptionPaymentStatus",
+    "SubscriptionStatus",
+]
+
 
 class SubscriptionStatus(enum.StrEnum):
     """Lifecycle of a subscription (delivery-only)."""
@@ -21,12 +32,3 @@ class SubscriptionEventStatus(enum.StrEnum):
     PAUSED = "paused"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
-
-
-class SubscriptionPaymentStatus(enum.StrEnum):
-    """Subscription payment status — independent from the event/subscription lifecycle."""
-
-    PENDING = "pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    REFUNDED = "refunded"

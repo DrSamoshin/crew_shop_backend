@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 import src.auth.models  # noqa: F401
 import src.catalog.models  # noqa: F401
 import src.orders.models  # noqa: F401
+import src.payments.models  # noqa: F401
 import src.points.models  # noqa: F401
 import src.ratings.models  # noqa: F401
 import src.subscriptions.models  # noqa: F401

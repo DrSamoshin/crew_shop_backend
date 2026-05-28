@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import (
 import src.auth.models  # noqa: F401 - register mappers on Base.metadata
 import src.catalog.models  # noqa: F401 - register mappers on Base.metadata
 import src.orders.models  # noqa: F401 - register mappers on Base.metadata
+import src.payments.models  # noqa: F401 - register mappers on Base.metadata
 import src.points.models  # noqa: F401 - register mappers on Base.metadata
 import src.ratings.models  # noqa: F401 - register mappers on Base.metadata
 import src.subscriptions.models  # noqa: F401 - register mappers on Base.metadata
