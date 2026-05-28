@@ -95,6 +95,10 @@ class ProductDTO(BaseModel):
     is_active: bool
     rating: float | None
     rating_count: int
+    # Per-user enrichment from the Ratings feature. ``user_rating`` is the caller's current
+    # 1-5 score (null when not rated or anonymous); ``can_rate`` reflects purchase verification.
+    user_rating: int | None = None
+    can_rate: bool = False
     coffee: CoffeeAttributesDTO | None = None
     equipment: EquipmentAttributesDTO | None = None
     accessory: AccessoryAttributesDTO | None = None

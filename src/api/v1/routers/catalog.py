@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.core.database import get_db
+from src.auth.dependencies import optional_auth
 from src.catalog.schemas.catalog import (
     AcidityBucket,
     CategoryListDTO,
@@ -22,10 +23,12 @@ from src.catalog.schemas.catalog import (
 )
 from src.catalog.services.category_service import CategoryService
 from src.catalog.services.product_service import ProductService
+from src.users.models import User
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserOptDep = Annotated[User | None, Depends(optional_auth)]
 
 
 @router.get(
@@ -35,6 +38,7 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 )
 async def list_products(
     db: DbDep,
+    user: UserOptDep,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     sort: SortOption = SortOption.NEWEST,
@@ -64,17 +68,21 @@ async def list_products(
         altitude_min=altitude_min,
         altitude_max=altitude_max,
     )
-    return await ProductService(db).list_products(filters, sort, limit, offset)
+    user_id = user.id if user else None
+    return await ProductService(db).list_products(filters, sort, limit, offset, user_id=user_id)
 
 
 @router.get("/search", response_model=ProductListDTO, summary="Search products by name")
 async def search_products(
     db: DbDep,
+    user: UserOptDep,
     q: Annotated[str, Query(min_length=2, max_length=100)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ProductListDTO:
-    return await ProductService(db).search_products(q, limit, offset)
+    return await ProductService(db).search_products(
+        q, limit, offset, user_id=user.id if user else None
+    )
 
 
 @router.get("/categories", response_model=CategoryListDTO, summary="List active categories")
@@ -87,5 +95,5 @@ async def list_categories(db: DbDep) -> CategoryListDTO:
     response_model=ProductDetailDTO,
     summary="Get product detail",
 )
-async def get_product(product_id: uuid.UUID, db: DbDep) -> ProductDetailDTO:
-    return await ProductService(db).get_product(product_id)
+async def get_product(product_id: uuid.UUID, db: DbDep, user: UserOptDep) -> ProductDetailDTO:
+    return await ProductService(db).get_product(product_id, user_id=user.id if user else None)

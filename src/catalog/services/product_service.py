@@ -1,6 +1,7 @@
 """Product service: orchestrates the repository and maps ORM rows to response DTOs."""
 
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,7 @@ from src.catalog.schemas.catalog import (
     ProductListDTO,
     SortOption,
 )
+from src.ratings import service as ratings_service
 
 
 def _coffee_dto(coffee: ProductCoffee) -> CoffeeAttributesDTO:
@@ -110,30 +112,47 @@ def _to_detail_dto(row: ProductRow) -> ProductDetailDTO:
 
 class ProductService:
     def __init__(self, db: AsyncSession) -> None:
+        self._db = db
         self._repo = ProductRepository(db)
 
     async def list_products(
-        self, filters: ProductFilters, sort: SortOption, limit: int, offset: int
+        self,
+        filters: ProductFilters,
+        sort: SortOption,
+        limit: int,
+        offset: int,
+        user_id: uuid.UUID | None = None,
     ) -> ProductListDTO:
         rows, total = await self._repo.list_products(filters, sort, limit, offset)
-        return ProductListDTO(
-            items=[_to_product_dto(row) for row in rows],
-            total=total,
-            limit=limit,
-            offset=offset,
-        )
+        items = [_to_product_dto(row) for row in rows]
+        await self._enrich(items, user_id)
+        return ProductListDTO(items=items, total=total, limit=limit, offset=offset)
 
-    async def get_product(self, product_id: uuid.UUID) -> ProductDetailDTO:
+    async def get_product(
+        self, product_id: uuid.UUID, user_id: uuid.UUID | None = None
+    ) -> ProductDetailDTO:
         row = await self._repo.get(product_id)
         if row is None:
             raise ProductNotFoundError(str(product_id))
-        return _to_detail_dto(row)
+        dto = _to_detail_dto(row)
+        await self._enrich([dto], user_id)
+        return dto
 
-    async def search_products(self, query: str, limit: int, offset: int) -> ProductListDTO:
+    async def search_products(
+        self, query: str, limit: int, offset: int, user_id: uuid.UUID | None = None
+    ) -> ProductListDTO:
         rows, total = await self._repo.search(query, limit, offset)
-        return ProductListDTO(
-            items=[_to_product_dto(row) for row in rows],
-            total=total,
-            limit=limit,
-            offset=offset,
-        )
+        items = [_to_product_dto(row) for row in rows]
+        await self._enrich(items, user_id)
+        return ProductListDTO(items=items, total=total, limit=limit, offset=offset)
+
+    async def _enrich(self, dtos: Sequence[ProductDTO], user_id: uuid.UUID | None) -> None:
+        """Set ``user_rating`` / ``can_rate`` per DTO when the caller is authenticated."""
+        if user_id is None or not dtos:
+            return
+        product_ids = [dto.id for dto in dtos]
+        ratings_map = await ratings_service.get_user_ratings_map(self._db, user_id, product_ids)
+        purchased = await ratings_service.get_purchased_product_ids(self._db, user_id, product_ids)
+        for dto in dtos:
+            dto.user_rating = ratings_map.get(dto.id)
+            dto.can_rate = dto.id in purchased

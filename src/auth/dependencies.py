@@ -57,3 +57,19 @@ async def require_session(
     """Like ``require_auth`` but returns the session (used by logout to revoke it)."""
     session, _ = await _resolve_session(credentials, db)
     return session
+
+
+async def optional_auth(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """Return the caller when authenticated, ``None`` when no token is supplied.
+
+    Used by endpoints whose response shape varies for signed-in vs anonymous callers (catalog
+    enrichment). A *present but invalid* token still raises like ``require_auth`` — silently
+    accepting stale tokens would mask client bugs.
+    """
+    if credentials is None:
+        return None
+    _, user = await _resolve_session(credentials, db)
+    return user
