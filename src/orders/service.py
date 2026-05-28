@@ -85,6 +85,8 @@ def _delivery_dto(info: OrderDeliveryInfo) -> DeliveryInfoDTO:
 
 
 def _order_dto(order: Order) -> OrderDTO:
+    # Order.payments is ordered newest-first by the relationship's ``order_by``.
+    latest = order.payments[0] if order.payments else None
     return OrderDTO(
         id=order.id,
         user_id=order.user_id,
@@ -96,6 +98,8 @@ def _order_dto(order: Order) -> OrderDTO:
         items=[_item_dto(item) for item in order.products],
         pickup=_pickup_dto(order.pickup_info) if order.pickup_info else None,
         delivery=_delivery_dto(order.delivery_info) if order.delivery_info else None,
+        payment_id=latest.id if latest else None,
+        payment_status=latest.status if latest else None,
         created_at=order.created_at,
         updated_at=order.updated_at,
     )
@@ -108,6 +112,7 @@ def _list_item_dto(order: Order) -> OrderListItemDTO:
         order_type=order.order_type,
         status=order.status,
         total_price=order.total_price,
+        currency=order.currency,
         item_count=len(order.products),
         pickup_point_name=order.pickup_info.point.name if order.pickup_info else None,
         delivery_city=order.delivery_info.city if order.delivery_info else None,

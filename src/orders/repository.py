@@ -15,11 +15,12 @@ from src.orders.models import Order, OrderPickupInfo
 
 
 def _eager_options() -> tuple[ORMOption, ...]:
-    """Eager-load line items and the (single) fulfillment row, with the pickup point joined."""
+    """Eager-load line items, the (single) fulfillment row + pickup point, and payments."""
     return (
         selectinload(Order.products),
         selectinload(Order.pickup_info).joinedload(OrderPickupInfo.point),
         selectinload(Order.delivery_info),
+        selectinload(Order.payments),
     )
 
 

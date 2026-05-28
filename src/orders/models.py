@@ -30,6 +30,7 @@ from src.api.core.utils import sql_str_list
 from src.orders.enums import GrindSize, OrderStatus, OrderType
 
 if TYPE_CHECKING:
+    from src.payments.models import OrderPayment
     from src.points.models import Point
     from src.users.models import User
 
@@ -80,6 +81,14 @@ class Order(Base, TimestampMixin):
         uselist=False,
         cascade="all, delete-orphan",
         passive_deletes=True,
+        lazy="noload",
+    )
+    # Payment history (newest first). OrderPayment.order_id is RESTRICT so deletion is blocked
+    # while payments exist; we surface only the latest one in the response DTO.
+    payments: Mapped[list["OrderPayment"]] = relationship(
+        "OrderPayment",
+        back_populates="order",
+        order_by="OrderPayment.created_at.desc()",
         lazy="noload",
     )
 

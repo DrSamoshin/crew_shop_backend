@@ -96,7 +96,7 @@ class DeliveryInfoDTO(BaseModel):
 
 
 class OrderDTO(BaseModel):
-    """Full order detail: line items plus the single fulfillment block."""
+    """Full order detail: line items + the single fulfillment block + latest payment summary."""
 
     id: uuid.UUID
     user_id: uuid.UUID
@@ -108,6 +108,11 @@ class OrderDTO(BaseModel):
     items: list[OrderItemDTO]
     pickup: PickupInfoDTO | None
     delivery: DeliveryInfoDTO | None
+    # Latest ``OrderPayment`` rolled into the detail view so the web can render an "unpaid"
+    # banner / "retry" button without a second round-trip; ``None`` if no payment was ever
+    # attempted.
+    payment_id: uuid.UUID | None
+    payment_status: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -120,6 +125,7 @@ class OrderListItemDTO(BaseModel):
     order_type: str
     status: str
     total_price: DecimalStr
+    currency: str
     item_count: int
     pickup_point_name: str | None
     delivery_city: str | None

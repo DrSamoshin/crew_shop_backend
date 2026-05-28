@@ -62,7 +62,7 @@ class OrderPayment(Base, TimestampMixin):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    order: Mapped["Order"] = relationship(lazy="noload")
+    order: Mapped["Order"] = relationship(back_populates="payments", lazy="noload")
     user: Mapped["User"] = relationship(lazy="noload")
 
     __table_args__ = (
