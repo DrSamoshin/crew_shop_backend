@@ -15,8 +15,9 @@ WORKDIR /app
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies into .venv (dev deps included for the local image)
-RUN uv sync --frozen
+# Production-grade image: runtime deps only (no ruff / mypy / pytest). Dev work happens on
+# the host (``uv sync`` without --no-dev); the container ships a minimal venv.
+RUN uv sync --frozen --no-dev
 
 # Stage 2: Runtime - minimal image
 FROM python:3.13-slim
