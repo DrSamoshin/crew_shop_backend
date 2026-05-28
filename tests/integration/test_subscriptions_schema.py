@@ -42,7 +42,7 @@ async def _make_product(session: AsyncSession, *, price: Decimal = Decimal("12.5
 
 async def _make_subscription(session: AsyncSession) -> Subscription:
     user = await _make_user(session)
-    sub = Subscription(user_id=user.id)
+    sub = Subscription(user_id=user.id, frequency="weekly")
     sub.delivery_info = SubscriptionDeliveryInfo(
         recipient_name="John Doe",
         phone="+380501234567",
@@ -153,7 +153,7 @@ async def test_one_product_per_event(db_session: AsyncSession) -> None:
 
 async def test_invalid_subscription_status_rejected(db_session: AsyncSession) -> None:
     user = await _make_user(db_session)
-    db_session.add(Subscription(user_id=user.id, status="renewing"))
+    db_session.add(Subscription(user_id=user.id, frequency="weekly", status="renewing"))
     with pytest.raises(IntegrityError):
         await db_session.flush()
 

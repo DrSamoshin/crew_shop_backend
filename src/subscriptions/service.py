@@ -154,7 +154,11 @@ class SubscriptionService:
             raise SubscriptionProductInactiveError(str(data.product_id))
 
         today = datetime.now(UTC).date()
-        sub = Subscription(user_id=user_id, status=SubscriptionStatus.ACTIVE.value)
+        sub = Subscription(
+            user_id=user_id,
+            frequency=data.frequency.value,
+            status=SubscriptionStatus.ACTIVE.value,
+        )
         sub.delivery_info = SubscriptionDeliveryInfo(
             recipient_name=data.delivery.recipient_name,
             phone=data.delivery.phone,

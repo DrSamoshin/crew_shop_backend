@@ -56,6 +56,7 @@ class Subscription(Base, TimestampMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(
         SaUUID, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -81,6 +82,7 @@ class Subscription(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(f"status IN ({sql_str_list(SubscriptionStatus)})", name="status"),
+        CheckConstraint("frequency IN ('weekly', 'biweekly', 'monthly')", name="frequency"),
         Index("idx_subscriptions_status", "status"),
         Index("idx_subscriptions_user_id", "user_id"),
     )

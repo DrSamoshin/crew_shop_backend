@@ -2,6 +2,7 @@
 
 V1 pre-creates a 3-month horizon: weekly → 12 events, biweekly → 6, monthly → 3. The first
 event lands one interval ahead of ``today`` so creation never reserves a same-day delivery.
+The same horizon is appended when the scheduler extends an active subscription.
 """
 
 import calendar
@@ -40,3 +41,11 @@ def event_dates(today: date, frequency: SubscriptionFrequency) -> list[date]:
     interval, count = _PERIODIC[frequency]
     first = today + interval
     return [first + interval * i for i in range(count)]
+
+
+def next_dates_after(last_date: date, frequency: SubscriptionFrequency) -> list[date]:
+    """A horizon-worth of new dates starting one interval after ``last_date`` (for extension)."""
+    if frequency is SubscriptionFrequency.MONTHLY:
+        return [add_months(last_date, i) for i in range(1, HORIZON_MONTHS + 1)]
+    interval, count = _PERIODIC[frequency]
+    return [last_date + interval * (i + 1) for i in range(count)]
