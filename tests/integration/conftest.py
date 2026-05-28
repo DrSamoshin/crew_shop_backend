@@ -22,6 +22,7 @@ import src.catalog.models  # noqa: F401 - register mappers on Base.metadata
 import src.orders.models  # noqa: F401 - register mappers on Base.metadata
 import src.points.models  # noqa: F401 - register mappers on Base.metadata
 import src.ratings.models  # noqa: F401 - register mappers on Base.metadata
+import src.subscriptions.models  # noqa: F401 - register mappers on Base.metadata
 import src.users.models  # noqa: F401 - register mappers on Base.metadata
 from scripts import seed_dev
 from src.api.app import create_app

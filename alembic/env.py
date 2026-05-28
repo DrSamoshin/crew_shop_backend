@@ -11,6 +11,7 @@ import src.catalog.models  # noqa: F401
 import src.orders.models  # noqa: F401
 import src.points.models  # noqa: F401
 import src.ratings.models  # noqa: F401
+import src.subscriptions.models  # noqa: F401
 import src.users.models  # noqa: F401
 from alembic import context
 from src.api.core.configs import settings
