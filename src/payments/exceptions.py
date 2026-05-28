@@ -48,3 +48,14 @@ class PaymentProviderError(PaymentException):
 
     def __init__(self, message: str = "Payment provider error") -> None:
         super().__init__(message, status_code=502, error_code="PAYMENT_PROVIDER_ERROR")
+
+
+class PaymentMethodNotFoundError(PaymentException):
+    """No saved payment method exists for the requested id or for the caller."""
+
+    def __init__(self, method_id: str) -> None:
+        super().__init__(
+            f"Payment method {method_id} not found",
+            status_code=404,
+            error_code="PAYMENT_METHOD_NOT_FOUND",
+        )

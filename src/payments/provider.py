@@ -26,8 +26,9 @@ class ChargeRequest:
 
     amount: Decimal
     currency: str
-    reference: str  # Our ``OrderPayment.id``, used as the idempotency / lookup key.
-    customer_id: str | None = None  # External provider customer id (saved-method, future).
+    reference: str  # Our ``OrderPayment.id`` (or subscription event id), idempotency key.
+    customer_id: str | None = None  # External provider customer id (saved-method).
+    method_token: str | None = None  # External provider payment-method token (saved-method).
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,18 @@ class RefundResult:
     """The provider's response to a refund call."""
 
     status: str  # "refunded" | "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class SavedMethodResult:
+    """The provider's view of a saved payment method (customer + token + display fields)."""
+
+    provider_customer_id: str
+    provider_method_token: str
+    brand: str
+    last4: str
+    exp_month: int
+    exp_year: int
 
 
 class PaymentProvider(ABC):
@@ -62,6 +75,16 @@ class PaymentProvider(ABC):
     def verify_callback(self, payload: bytes, signature: str | None) -> bool:
         """Authenticate a webhook payload; return ``True`` iff the signature matches."""
 
+    @abstractmethod
+    async def save_method(self, user_ref: str, intent_token: str) -> SavedMethodResult:
+        """Persist a payment method for ``user_ref`` (our user id) using a frontend-collected
+        intent/setup token. Returns the provider's saved customer + method ids + display info.
+        """
+
+    @abstractmethod
+    async def delete_method(self, provider_method_token: str) -> None:
+        """Detach a saved payment method at the provider. Idempotent."""
+
 
 class FakeProvider(PaymentProvider):
     """Deterministic in-process provider used in dev/tests until a real one is chosen.
@@ -72,7 +95,8 @@ class FakeProvider(PaymentProvider):
     - ``reference`` starts with ``fail-`` → ``status="failed"``.
     - otherwise → ``status="completed"``.
 
-    Callback signature is a constant-time compare against ``settings.payment_provider_secret``.
+    ``save_method`` echoes deterministic fake ids and a fixed display card (visa 4242). Callback
+    signature is a constant-time compare against ``settings.payment_provider_secret``.
     """
 
     name = "fake"
@@ -89,6 +113,19 @@ class FakeProvider(PaymentProvider):
         if not expected or not signature:
             return False
         return hmac.compare_digest(signature, expected)
+
+    async def save_method(self, user_ref: str, intent_token: str) -> SavedMethodResult:
+        return SavedMethodResult(
+            provider_customer_id=f"fake-cus-{user_ref}",
+            provider_method_token=f"fake-pm-{uuid.uuid4()}",
+            brand="visa",
+            last4="4242",
+            exp_month=12,
+            exp_year=2030,
+        )
+
+    async def delete_method(self, provider_method_token: str) -> None:
+        return None
 
 
 def get_payment_provider() -> PaymentProvider:

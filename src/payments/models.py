@@ -1,7 +1,5 @@
-"""``OrderPayment``: provider-agnostic payment record for an order (EUR, immutable history).
-
-Each payment attempt is its own row; failed and refunded are terminal. Payment status is
-independent from the parent ``Order`` lifecycle (a failed payment does not move the order).
+"""Payment domain models: ``OrderPayment`` (per-attempt immutable history) and
+``PaymentMethod`` (a user's saved card with the provider's customer + token).
 """
 
 import uuid
@@ -11,12 +9,15 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import UUID as SaUUID
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -74,3 +75,44 @@ class OrderPayment(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<OrderPayment(id={self.id}, order={self.order_id}, status={self.status})>"
+
+
+class PaymentMethod(Base, TimestampMixin):
+    """A user's saved payment method (one row per card).
+
+    ``provider_customer_id`` + ``provider_method_token`` are opaque, handed back to the
+    ``PaymentProvider`` for off-session charges. Display fields (brand / last4 / exp) are
+    captured at save time so the Account UI renders the card without a provider round-trip.
+    ``is_default`` marks the card the subscription wizard picks unless explicitly overridden;
+    the service maintains the invariant that at most one method per user is default.
+    """
+
+    __tablename__ = "payment_methods"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        SaUUID, primary_key=True, default=uuid.uuid4, server_default=sql_text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        SaUUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider_customer_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_method_token: Mapped[str] = mapped_column(String(255), nullable=False)
+    brand: Mapped[str] = mapped_column(String(30), nullable=False)
+    last4: Mapped[str] = mapped_column(String(4), nullable=False)
+    exp_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    exp_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
+    )
+
+    user: Mapped["User"] = relationship(lazy="noload")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_method_token", name="provider_token"),
+        CheckConstraint("exp_month BETWEEN 1 AND 12", name="exp_month_range"),
+        Index("idx_payment_methods_user_id", "user_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PaymentMethod(id={self.id}, user={self.user_id}, {self.brand} ****{self.last4})>"
