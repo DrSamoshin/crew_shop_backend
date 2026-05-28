@@ -11,6 +11,7 @@ from src.auth.dependencies import require_auth
 from src.payments.provider import PaymentProviderDep
 from src.subscriptions.schemas import (
     CreateSubscriptionRequest,
+    PaySubscriptionRequest,
     SubscriptionDTO,
     SubscriptionListDTO,
 )
@@ -50,6 +51,23 @@ async def list_subscriptions(db: DbDep, user: UserDep) -> SubscriptionListDTO:
 )
 async def get_subscription(subscription_id: uuid.UUID, db: DbDep, user: UserDep) -> SubscriptionDTO:
     return await SubscriptionService(db).get(subscription_id, user.id)
+
+
+@router.post(
+    "/{subscription_id}/pay",
+    response_model=SubscriptionDTO,
+    summary="Charge a pending subscription using a saved payment method",
+)
+async def pay_subscription(
+    subscription_id: uuid.UUID,
+    payload: PaySubscriptionRequest,
+    db: DbDep,
+    user: UserDep,
+    provider: PaymentProviderDep,
+) -> SubscriptionDTO:
+    return await SubscriptionService(db, provider=provider).pay(
+        subscription_id, user.id, payload.payment_method_id
+    )
 
 
 @router.post(

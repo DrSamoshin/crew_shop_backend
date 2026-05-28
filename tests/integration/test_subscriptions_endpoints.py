@@ -78,7 +78,9 @@ async def test_create_weekly_generates_12_events(client_db: tuple[AsyncClient, M
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["status"] == "active"
+    # Without a saved payment method the subscription is created in ``pending``;
+    # callers either pass ``payment_method_id`` in create or post to /{id}/pay later.
+    assert body["status"] == "pending"
     assert body["currency"] == "EUR"
     assert len(body["events"]) == 12
     assert body["events"][0]["status"] == "pending"
@@ -178,9 +180,16 @@ async def test_detail_ownership_403(client_db: tuple[AsyncClient, Maker]) -> Non
 async def test_pause_resume_cancel(client_db: tuple[AsyncClient, Maker]) -> None:
     client, maker = client_db
     env = await _setup(maker)
-    created = await client.post(
-        "/v1/subscriptions", json=_payload(env, frequency="biweekly"), headers=_auth(env.token)
+    # Save a method + create with it so the subscription activates immediately.
+    method = await client.post(
+        "/v1/users/me/payment-methods",
+        json={"intent_token": "tok"},
+        headers=_auth(env.token),
     )
+    payload = _payload(env, frequency="biweekly")
+    payload["payment_method_id"] = method.json()["id"]
+    created = await client.post("/v1/subscriptions", json=payload, headers=_auth(env.token))
+    assert created.json()["status"] == "active"
     sub_id = created.json()["id"]
 
     paused = await client.post(f"/v1/subscriptions/{sub_id}/pause", headers=_auth(env.token))

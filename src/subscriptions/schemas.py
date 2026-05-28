@@ -27,9 +27,21 @@ class SubscriptionDeliveryIn(BaseModel):
 
 
 class CreateSubscriptionRequest(BaseModel):
+    """Create a subscription. With ``payment_method_id`` the upfront charge runs immediately
+    and the subscription activates on success; without it the subscription is left ``pending``
+    until the caller posts to ``/v1/subscriptions/{id}/pay``.
+    """
+
     product_id: uuid.UUID
     frequency: SubscriptionFrequency
     delivery: SubscriptionDeliveryIn
+    payment_method_id: uuid.UUID | None = None
+
+
+class PaySubscriptionRequest(BaseModel):
+    """Pay a pending subscription using a saved payment method."""
+
+    payment_method_id: uuid.UUID
 
 
 # --------------------------------------------------------------------- responses

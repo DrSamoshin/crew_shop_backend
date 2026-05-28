@@ -80,15 +80,26 @@ def _payload(env: Env, *, frequency: str = "weekly") -> dict[str, object]:
 # --------------------------------------------------------------------- create
 
 
+async def _save_method(client: AsyncClient, env: Env) -> str:
+    resp = await client.post(
+        "/v1/users/me/payment-methods",
+        json={"intent_token": "tok"},
+        headers=_auth(env.token),
+    )
+    assert resp.status_code == 201
+    return str(resp.json()["id"])
+
+
 async def test_create_subscription_charges_upfront_and_activates(
     client_db: tuple[AsyncClient, Maker],
 ) -> None:
     client, maker = client_db
     env = await _setup(maker)
+    method_id = await _save_method(client, env)
+    payload = _payload(env, frequency="biweekly")
+    payload["payment_method_id"] = method_id
 
-    resp = await client.post(
-        "/v1/subscriptions", json=_payload(env, frequency="biweekly"), headers=_auth(env.token)
-    )
+    resp = await client.post("/v1/subscriptions", json=payload, headers=_auth(env.token))
     assert resp.status_code == 201
     body = resp.json()
     assert body["status"] == "active"
@@ -122,10 +133,13 @@ async def test_create_subscription_failed_charge_blocks_activation(
 ) -> None:
     client, maker = client_db
     env = await _setup(maker)
+    method_id = await _save_method(client, env)
+    payload = _payload(env)
+    payload["payment_method_id"] = method_id
 
     client._transport.app.dependency_overrides[get_payment_provider] = lambda: _FailingProvider()  # type: ignore[attr-defined]
     try:
-        resp = await client.post("/v1/subscriptions", json=_payload(env), headers=_auth(env.token))
+        resp = await client.post("/v1/subscriptions", json=payload, headers=_auth(env.token))
     finally:
         client._transport.app.dependency_overrides.pop(get_payment_provider, None)  # type: ignore[attr-defined]
     assert resp.status_code == 409
@@ -155,9 +169,10 @@ async def test_cancel_refunds_undelivered_payments(
 ) -> None:
     client, maker = client_db
     env = await _setup(maker)
-    created = await client.post(
-        "/v1/subscriptions", json=_payload(env, frequency="biweekly"), headers=_auth(env.token)
-    )
+    method_id = await _save_method(client, env)
+    payload = _payload(env, frequency="biweekly")
+    payload["payment_method_id"] = method_id
+    created = await client.post("/v1/subscriptions", json=payload, headers=_auth(env.token))
     sub_id = created.json()["id"]
 
     cancelled = await client.post(f"/v1/subscriptions/{sub_id}/cancel", headers=_auth(env.token))
@@ -175,6 +190,83 @@ async def test_cancel_refunds_undelivered_payments(
             .all()
         )
         assert {p.status for p in payments} == {"refunded"}
+
+
+# ---------------------------------------------------------------- pay endpoint
+
+
+async def test_pay_pending_subscription_activates(
+    client_db: tuple[AsyncClient, Maker],
+) -> None:
+    client, maker = client_db
+    env = await _setup(maker)
+    method_id = await _save_method(client, env)
+
+    # Create without payment_method_id → pending, no charge yet.
+    created = await client.post(
+        "/v1/subscriptions",
+        json=_payload(env, frequency="biweekly"),
+        headers=_auth(env.token),
+    )
+    assert created.status_code == 201
+    assert created.json()["status"] == "pending"
+    sub_id = created.json()["id"]
+
+    paid = await client.post(
+        f"/v1/subscriptions/{sub_id}/pay",
+        json={"payment_method_id": method_id},
+        headers=_auth(env.token),
+    )
+    assert paid.status_code == 200
+    assert paid.json()["status"] == "active"
+
+    async with maker() as s:
+        payments = (
+            (
+                await s.execute(
+                    select(SubscriptionPayment).where(SubscriptionPayment.user_id == env.user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(payments) == 6
+        assert {p.status for p in payments} == {"completed"}
+
+
+async def test_pay_when_not_pending_409(client_db: tuple[AsyncClient, Maker]) -> None:
+    client, maker = client_db
+    env = await _setup(maker)
+    method_id = await _save_method(client, env)
+    payload = _payload(env)
+    payload["payment_method_id"] = method_id
+    created = await client.post("/v1/subscriptions", json=payload, headers=_auth(env.token))
+    sub_id = created.json()["id"]  # already active
+
+    resp = await client.post(
+        f"/v1/subscriptions/{sub_id}/pay",
+        json={"payment_method_id": method_id},
+        headers=_auth(env.token),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["error_code"] == "SUBSCRIPTION_INVALID_STATE"
+
+
+async def test_pay_with_others_method_404(client_db: tuple[AsyncClient, Maker]) -> None:
+    client, maker = client_db
+    env = await _setup(maker)
+    other = await _setup(maker)
+    other_method = await _save_method(client, other)
+    created = await client.post("/v1/subscriptions", json=_payload(env), headers=_auth(env.token))
+    sub_id = created.json()["id"]
+
+    resp = await client.post(
+        f"/v1/subscriptions/{sub_id}/pay",
+        json={"payment_method_id": other_method},
+        headers=_auth(env.token),
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["error_code"] == "PAYMENT_METHOD_NOT_FOUND"
 
 
 # --------------------------------------------------------- scheduler off-session

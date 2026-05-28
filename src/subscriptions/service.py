@@ -16,7 +16,9 @@ from sqlalchemy.orm import selectinload
 
 from src.catalog.models import Product
 from src.payments import billing as payment_billing
+from src.payments import method_service as payment_methods
 from src.payments.exceptions import PaymentInvalidStateError
+from src.payments.models import PaymentMethod
 from src.payments.provider import PaymentProvider
 from src.subscriptions.enums import SubscriptionEventStatus, SubscriptionStatus
 from src.subscriptions.exceptions import (
@@ -162,13 +164,10 @@ class SubscriptionService:
             raise SubscriptionProductInactiveError(str(data.product_id))
 
         today = datetime.now(UTC).date()
-        # Without a provider the subscription is activated immediately (legacy/test path).
-        # With one we keep it ``pending`` until the upfront charge settles.
-        initial_status = (
-            SubscriptionStatus.PENDING.value
-            if self._provider is not None
-            else SubscriptionStatus.ACTIVE.value
-        )
+        # The subscription only activates after a successful charge. Without a provider /
+        # method we leave it ``pending`` — callers either pass ``payment_method_id`` here
+        # or post to ``/v1/subscriptions/{id}/pay`` later.
+        initial_status = SubscriptionStatus.PENDING.value
         sub = Subscription(
             user_id=user_id,
             frequency=data.frequency.value,
@@ -210,19 +209,40 @@ class SubscriptionService:
         loaded = await self._load(sub.id)
         assert loaded is not None
 
-        if self._provider is not None:
-            charged = await payment_billing.charge_subscription_upfront(
-                self._db, self._provider, loaded
-            )
-            if not charged:
-                raise PaymentInvalidStateError(
-                    "Subscription upfront charge failed; subscription left inactive"
-                )
-            loaded.status = SubscriptionStatus.ACTIVE.value
-            await self._db.flush()
-            loaded = await self._load(sub.id)
-            assert loaded is not None
+        if data.payment_method_id is not None:
+            if self._provider is None:  # router always injects one; defensive only.
+                raise PaymentInvalidStateError("Payment provider not configured")
+            method = await payment_methods.get_method(self._db, user_id, data.payment_method_id)
+            await self._charge_and_activate(loaded, method)
+            loaded = await self._reload(sub.id)
         return _subscription_dto(loaded)
+
+    # ---------------------------------------------------------------- payment
+
+    async def pay(
+        self, sub_id: uuid.UUID, user_id: uuid.UUID, method_id: uuid.UUID
+    ) -> SubscriptionDTO:
+        """Charge a pending subscription on a saved method and activate on success."""
+        if self._provider is None:
+            raise PaymentInvalidStateError("Payment provider not configured")
+        sub = await self._owned(sub_id, user_id)
+        if sub.status != SubscriptionStatus.PENDING.value:
+            raise SubscriptionInvalidStateError(sub.status, "pay")
+        method = await payment_methods.get_method(self._db, user_id, method_id)
+        await self._charge_and_activate(sub, method)
+        return _subscription_dto(await self._reload(sub_id))
+
+    async def _charge_and_activate(self, sub: Subscription, method: PaymentMethod) -> None:
+        assert self._provider is not None
+        charged = await payment_billing.charge_subscription_upfront(
+            self._db, self._provider, sub, method=method
+        )
+        if not charged:
+            raise PaymentInvalidStateError(
+                "Subscription upfront charge failed; subscription left inactive"
+            )
+        sub.status = SubscriptionStatus.ACTIVE.value
+        await self._db.flush()
 
     # ------------------------------------------------------------- transitions
 

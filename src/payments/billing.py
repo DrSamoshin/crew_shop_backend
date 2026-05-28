@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.core.utils import utcnow
 from src.payments.enums import PaymentStatus
+from src.payments.models import PaymentMethod
 from src.payments.provider import ChargeRequest, PaymentProvider
 from src.subscriptions.models import (
     Subscription,
@@ -30,17 +31,29 @@ from src.subscriptions.models import (
 
 
 async def charge_subscription_upfront(
-    db: AsyncSession, provider: PaymentProvider, sub: Subscription
+    db: AsyncSession,
+    provider: PaymentProvider,
+    sub: Subscription,
+    *,
+    method: PaymentMethod | None = None,
 ) -> bool:
     """Charge the period total once; on success record a completed payment per event.
 
-    Returns ``True`` iff the provider settled the charge. Caller decides activation.
+    If ``method`` is supplied the charge uses the saved provider customer + token; otherwise
+    it runs without saved-method context (FakeProvider works either way). Returns ``True``
+    iff the provider settled the charge — the caller decides activation.
     """
     if not sub.events:
         return True  # nothing to charge — caller may activate immediately
     total = sum((e.price_per_delivery for e in sub.events), Decimal("0.00"))
     result = await provider.create_charge(
-        ChargeRequest(amount=total, currency="EUR", reference=str(sub.id))
+        ChargeRequest(
+            amount=total,
+            currency="EUR",
+            reference=str(sub.id),
+            customer_id=method.provider_customer_id if method else None,
+            method_token=method.provider_method_token if method else None,
+        )
     )
     if result.status != PaymentStatus.COMPLETED.value:
         return False
