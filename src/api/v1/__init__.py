@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from src.api.v1.routers import (
     admin_catalog_router,
     admin_orders_router,
+    admin_points_router,
     auth_router,
     catalog_router,
     health_router,
@@ -24,5 +25,6 @@ api_router.include_router(users_router)
 api_router.include_router(ratings_router)
 api_router.include_router(my_ratings_router)
 api_router.include_router(points_router)
+api_router.include_router(admin_points_router)
 
 __all__ = ["api_router"]
