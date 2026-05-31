@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from scripts import seed_dev
 from src.catalog.models import (
-    Category,
     Product,
+    ProductCategory,
     ProductCoffee,
     ProductCompatibility,
     ProductType,
@@ -41,7 +41,7 @@ async def test_seed_catalog_is_idempotent(db_session: AsyncSession) -> None:
     assert created_again == 0
 
     assert await db_session.scalar(select(func.count()).select_from(Product)) == expected_products
-    assert await db_session.scalar(select(func.count()).select_from(Category)) == len(
+    assert await db_session.scalar(select(func.count()).select_from(ProductCategory)) == len(
         seed_dev.SEED_CATEGORIES
     )
     assert await db_session.scalar(select(func.count()).select_from(ProductType)) == 4

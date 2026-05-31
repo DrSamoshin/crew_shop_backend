@@ -29,12 +29,12 @@ class CatalogInvalidFilterError(CatalogException):
         )
 
 
-class CategoryNotFoundError(CatalogException):
+class ProductCategoryNotFoundError(CatalogException):
     """No category exists for the requested id."""
 
-    def __init__(self, category_id: str) -> None:
+    def __init__(self, product_category_id: str) -> None:
         super().__init__(
-            f"Category {category_id} not found",
+            f"ProductCategory {product_category_id} not found",
             status_code=404,
             error_code="CATEGORY_NOT_FOUND",
         )
@@ -62,12 +62,12 @@ class ProductTypeMismatchError(CatalogException):
         )
 
 
-class CategoryNotEmptyError(CatalogException):
+class ProductCategoryNotEmptyError(CatalogException):
     """A category still has products and cannot be deleted."""
 
-    def __init__(self, category_id: str) -> None:
+    def __init__(self, product_category_id: str) -> None:
         super().__init__(
-            f"Category {category_id} still has products",
+            f"ProductCategory {product_category_id} still has products",
             status_code=409,
             error_code="CATALOG_CATEGORY_NOT_EMPTY",
         )

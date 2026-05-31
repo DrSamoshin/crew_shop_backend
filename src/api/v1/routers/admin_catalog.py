@@ -14,13 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.core.database import get_db
 from src.catalog.admin.dependencies import ServiceCaller, audit, require_service_caller
 from src.catalog.admin.schemas import (
-    CategoryCreate,
-    CategoryUpdate,
+    ProductCategoryCreate,
+    ProductCategoryUpdate,
     ProductCreate,
     ProductUpdate,
 )
 from src.catalog.admin.service import AdminCatalogService
-from src.catalog.schemas.catalog import CategoryDTO, ProductDetailDTO
+from src.catalog.schemas.catalog import ProductCategoryDTO, ProductDetailDTO
 
 router = APIRouter(prefix="/admin/catalog", tags=["catalog-admin"])
 
@@ -60,31 +60,37 @@ async def delete_product(product_id: uuid.UUID, db: DbDep, caller: CallerDep) ->
 
 
 @router.post(
-    "/categories",
-    response_model=CategoryDTO,
+    "/product-categories",
+    response_model=ProductCategoryDTO,
     status_code=status.HTTP_201_CREATED,
     summary="Create a category",
 )
-async def create_category(payload: CategoryCreate, db: DbDep, caller: CallerDep) -> CategoryDTO:
+async def create_category(
+    payload: ProductCategoryCreate, db: DbDep, caller: CallerDep
+) -> ProductCategoryDTO:
     category = await AdminCatalogService(db).create_category(payload)
     audit(caller, "create", f"category:{category.id}")
     return category
 
 
-@router.put("/categories/{category_id}", response_model=CategoryDTO, summary="Update a category")
+@router.put(
+    "/product-categories/{product_category_id}",
+    response_model=ProductCategoryDTO,
+    summary="Update a category",
+)
 async def update_category(
-    category_id: uuid.UUID, payload: CategoryUpdate, db: DbDep, caller: CallerDep
-) -> CategoryDTO:
-    category = await AdminCatalogService(db).update_category(category_id, payload)
-    audit(caller, "update", f"category:{category_id}")
+    product_category_id: uuid.UUID, payload: ProductCategoryUpdate, db: DbDep, caller: CallerDep
+) -> ProductCategoryDTO:
+    category = await AdminCatalogService(db).update_category(product_category_id, payload)
+    audit(caller, "update", f"category:{product_category_id}")
     return category
 
 
 @router.delete(
-    "/categories/{category_id}",
+    "/product-categories/{product_category_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a category",
 )
-async def delete_category(category_id: uuid.UUID, db: DbDep, caller: CallerDep) -> None:
-    await AdminCatalogService(db).delete_category(category_id)
-    audit(caller, "delete", f"category:{category_id}")
+async def delete_category(product_category_id: uuid.UUID, db: DbDep, caller: CallerDep) -> None:
+    await AdminCatalogService(db).delete_category(product_category_id)
+    audit(caller, "delete", f"category:{product_category_id}")

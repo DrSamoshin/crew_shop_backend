@@ -21,10 +21,10 @@ from src.api.core.database import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from src.catalog.models.accessory import ProductAccessories
-    from src.catalog.models.category import Category
     from src.catalog.models.coffee import ProductCoffee
     from src.catalog.models.consumable import ProductConsumables
     from src.catalog.models.equipment import ProductEquipment
+    from src.catalog.models.product_category import ProductCategory
     from src.catalog.models.product_type import ProductType
 
 
@@ -43,8 +43,8 @@ class Product(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    category_id: Mapped[uuid.UUID] = mapped_column(
-        UUID, ForeignKey("categories.id"), nullable=False
+    product_category_id: Mapped[uuid.UUID] = mapped_column(
+        UUID, ForeignKey("product_categories.id"), nullable=False
     )
     product_type_id: Mapped[uuid.UUID] = mapped_column(
         UUID, ForeignKey("product_types.id"), nullable=False
@@ -57,7 +57,7 @@ class Product(Base, TimestampMixin):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
 
-    category: Mapped["Category"] = relationship(back_populates="products", lazy="noload")
+    category: Mapped["ProductCategory"] = relationship(back_populates="products", lazy="noload")
     product_type: Mapped["ProductType"] = relationship(back_populates="products", lazy="noload")
 
     coffee: Mapped["ProductCoffee | None"] = relationship(
@@ -91,7 +91,7 @@ class Product(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint("price > 0", name="price_positive"),
-        Index("idx_products_category_id", "category_id"),
+        Index("idx_products_product_category_id", "product_category_id"),
         Index("idx_products_product_type_id", "product_type_id"),
         Index("idx_products_is_active", "is_active"),
     )
