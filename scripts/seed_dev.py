@@ -33,9 +33,9 @@ from src.catalog.enums import (
     RoastLevel,
 )
 from src.catalog.models import (
-    Category,
     Product,
     ProductAccessories,
+    ProductCategory,
     ProductCoffee,
     ProductCompatibility,
     ProductConsumables,
@@ -131,6 +131,7 @@ async def seed_users(session: AsyncSession) -> int:
 class CategorySpec:
     name: str
     description: str
+    product_type: ProductTypeName
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,11 +212,11 @@ def _flavor_notes(*notes: tuple[str, str, str]) -> dict[str, list[str]]:
 
 
 SEED_CATEGORIES: tuple[CategorySpec, ...] = (
-    CategorySpec("Single Origin", "Single-origin specialty coffee beans"),
-    CategorySpec("Blends", "Signature house coffee blends"),
-    CategorySpec("Equipment", "Machines, grinders and brewers"),
-    CategorySpec("Accessories", "Tampers, pitchers and brewing tools"),
-    CategorySpec("Consumables", "Filters, pods and cleaning supplies"),
+    CategorySpec("Single Origin", "Single-origin specialty coffee beans", ProductTypeName.COFFEE),
+    CategorySpec("Blends", "Signature house coffee blends", ProductTypeName.COFFEE),
+    CategorySpec("Equipment", "Machines, grinders and brewers", ProductTypeName.EQUIPMENT),
+    CategorySpec("Accessories", "Tampers, pitchers and brewing tools", ProductTypeName.ACCESSORIES),
+    CategorySpec("Consumables", "Filters, pods and cleaning supplies", ProductTypeName.CONSUMABLES),
 )
 
 SEED_COFFEES: tuple[CoffeeSpec, ...] = (
@@ -404,6 +405,146 @@ SEED_CONSUMABLES: tuple[ConsumableSpec, ...] = (
     ),
 )
 
+# ------------------------------------------------------------- generated bulk catalog
+#
+# The curated specs above stay as-is (compatibility/ratings reference them by name).
+# The generators below append ~10x more products so the catalog endpoints can be
+# exercised against a realistic volume (~120 products) for pagination. Generated
+# coffees deliberately avoid the regions/roasts/flavours/acidity the curated filter
+# tests assert on, so those exact-match tests stay valid; non-coffee products never
+# appear in coffee-filtered results at all.
+
+# (region, display) — none overlap the curated ethiopia/colombia/kenya filter fixtures.
+_GEN_COFFEE_ORIGINS: tuple[tuple[str, str, str], ...] = (
+    ("guatemala", "Guatemala", "13.00"),
+    ("rwanda", "Rwanda", "14.00"),
+    ("peru", "Peru", "11.50"),
+    ("honduras", "Honduras", "10.90"),
+    ("costa-rica", "Costa Rica", "14.50"),
+    ("panama", "Panama", "16.00"),
+    ("mexico", "Mexico", "11.80"),
+    ("ecuador", "Ecuador", "12.40"),
+    ("indonesia", "Indonesia", "13.70"),
+)
+
+# Flavour pool excludes "berry" (a curated filter fixture).
+_GEN_FLAVOR_POOL: tuple[tuple[str, str, str], ...] = (
+    ("caramel", "Caramel", "Карамель"),
+    ("chocolate", "Chocolate", "Шоколад"),
+    ("nutty", "Nutty", "Орехи"),
+    ("floral", "Flowers", "Цветы"),
+    ("citrus", "Citrus", "Цитрус"),
+    ("winey", "Winey", "Винный"),
+    ("stone-fruit", "Stone fruit", "Косточковые"),
+    ("honey", "Honey", "Мёд"),
+)
+
+_GEN_MATERIALS: tuple[str, ...] = ("stainless steel", "plastic", "aluminium", "ceramic", "glass")
+
+
+def _generate_coffees() -> list[CoffeeSpec]:
+    # medium/dark only and acidity 1-3 keep generated coffees out of the curated
+    # light-roast and "bright" acidity filter fixtures.
+    roasts = (RoastLevel.MEDIUM, RoastLevel.DARK)
+    processes = list(ProcessingMethod)
+    out: list[CoffeeSpec] = []
+    i = 0
+    for region, display, base in _GEN_COFFEE_ORIGINS:
+        base_price = Decimal(base)
+        for lot in range(1, 6):
+            notes = tuple(_GEN_FLAVOR_POOL[(i + k) % len(_GEN_FLAVOR_POOL)] for k in range(3))
+            out.append(
+                CoffeeSpec(
+                    name=f"{display} Micro-lot {lot:02d}",
+                    category="Single Origin",
+                    price=base_price + Decimal(lot),
+                    region=region,
+                    roast_level=roasts[i % len(roasts)],
+                    processing=processes[i % len(processes)],
+                    acidity=1 + (i % 3),
+                    body=1 + ((i + 2) % 5),
+                    sweetness=1 + ((i + 1) % 5),
+                    altitude=1000 + (i % 12) * 100,
+                    flavor_notes=_flavor_notes(*notes),
+                    description=f"Seeded {display} micro-lot {lot} for pagination testing.",
+                )
+            )
+            i += 1
+    return out
+
+
+def _generate_equipment() -> list[EquipmentSpec]:
+    types = list(EquipmentType)
+    out: list[EquipmentSpec] = []
+    for n in range(27):
+        etype = types[n % len(types)]
+        powered = etype in (EquipmentType.MACHINE, EquipmentType.GRINDER)
+        out.append(
+            EquipmentSpec(
+                name=f"Crew {etype.value.capitalize()} {n + 1:02d}",
+                category="Equipment",
+                price=Decimal("49.00") + Decimal(n) * Decimal("10.00"),
+                equipment_type=etype,
+                material=_GEN_MATERIALS[n % len(_GEN_MATERIALS)],
+                power_watts=(100 + (n % 15) * 100) if powered else None,
+                warranty_months=12 + (n % 3) * 12,
+                weight_kg=Decimal("1.00") + Decimal(n % 8),
+                other_options={"sku": f"EQ-{n + 1:03d}"},
+                description=f"Seeded {etype.value} unit {n + 1} for pagination testing.",
+            )
+        )
+    return out
+
+
+def _generate_accessories() -> list[AccessorySpec]:
+    types = list(AccessoryType)
+    out: list[AccessorySpec] = []
+    for n in range(18):
+        atype = types[n % len(types)]
+        out.append(
+            AccessorySpec(
+                name=f"Crew {atype.value.capitalize()} {n + 1:02d}",
+                category="Accessories",
+                price=Decimal("9.00") + Decimal(n) * Decimal("2.50"),
+                accessory_type=atype,
+                material=_GEN_MATERIALS[n % len(_GEN_MATERIALS)],
+                other_options={"sku": f"AC-{n + 1:03d}"},
+                description=f"Seeded {atype.value} {n + 1} for pagination testing.",
+            )
+        )
+    return out
+
+
+def _generate_consumables() -> list[ConsumableSpec]:
+    types = list(ConsumableType)
+    units = ("filter", "pod", "tablet", "sachet", "bottle")
+    out: list[ConsumableSpec] = []
+    for n in range(18):
+        ctype = types[n % len(types)]
+        out.append(
+            ConsumableSpec(
+                name=f"Crew {ctype.value.capitalize()} Pack {n + 1:02d}",
+                category="Consumables",
+                price=Decimal("4.50") + Decimal(n) * Decimal("1.50"),
+                consumable_type=ctype,
+                quantity_per_pack=10 * (1 + n % 10),
+                unit_description=units[n % len(units)],
+                material="paper" if ctype == ConsumableType.FILTER else None,
+                expiry_months=12 + (n % 4) * 6,
+                storage_conditions="cool/dry",
+                other_options={"sku": f"CO-{n + 1:03d}"},
+                description=f"Seeded {ctype.value} pack {n + 1} for pagination testing.",
+            )
+        )
+    return out
+
+
+SEED_COFFEES = SEED_COFFEES + tuple(_generate_coffees())
+SEED_EQUIPMENT = SEED_EQUIPMENT + tuple(_generate_equipment())
+SEED_ACCESSORIES = SEED_ACCESSORIES + tuple(_generate_accessories())
+SEED_CONSUMABLES = SEED_CONSUMABLES + tuple(_generate_consumables())
+
+
 SEED_COMPATIBILITY: tuple[CompatibilitySpec, ...] = (
     CompatibilitySpec(
         accessory="V60 Paper Filters 02 (100pk)",
@@ -418,10 +559,15 @@ SEED_COMPATIBILITY: tuple[CompatibilitySpec, ...] = (
 )
 
 
-async def _get_or_create_category(session: AsyncSession, spec: CategorySpec) -> Category:
-    category = await session.scalar(select(Category).where(Category.name == spec.name))
+async def _get_or_create_category(session: AsyncSession, spec: CategorySpec) -> ProductCategory:
+    category = await session.scalar(
+        select(ProductCategory).where(ProductCategory.name == spec.name)
+    )
     if category is None:
-        category = Category(name=spec.name, description=spec.description)
+        product_type = await _get_or_create_product_type(session, spec.product_type)
+        category = ProductCategory(
+            name=spec.name, description=spec.description, product_type_id=product_type.id
+        )
         session.add(category)
         await session.flush()
     return category
@@ -441,7 +587,7 @@ async def _get_or_create_product(
     *,
     name: str,
     description: str | None,
-    category: Category,
+    category: ProductCategory,
     product_type: ProductType,
     price: Decimal,
     registry: dict[str, Product],
@@ -454,7 +600,7 @@ async def _get_or_create_product(
     product = Product(
         name=name,
         description=description,
-        category_id=category.id,
+        product_category_id=category.id,
         product_type_id=product_type.id,
         price=price,
     )
