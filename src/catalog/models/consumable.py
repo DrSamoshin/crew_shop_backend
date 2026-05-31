@@ -3,7 +3,7 @@
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import UUID, CheckConstraint, ForeignKey, Integer, String
+from sqlalchemy import UUID, CheckConstraint, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,6 +41,9 @@ class ProductConsumables(Base, TimestampMixin):
         ),
         CheckConstraint("quantity_per_pack > 0", name="quantity_positive"),
         CheckConstraint("expiry_months IS NULL OR expiry_months > 0", name="expiry_positive"),
+        Index("idx_product_consumables_consumable_type", "consumable_type"),
+        Index("idx_product_consumables_material", "material"),
+        Index("idx_product_consumables_quantity_per_pack", "quantity_per_pack"),
     )
 
     def __repr__(self) -> str:

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.api.core.configs import settings as app_settings
 from src.auth import sessions
-from src.catalog.models import Category, Product, ProductType
+from src.catalog.models import Product, ProductCategory, ProductType
 from src.orders.enums import OrderType
 from src.orders.models import Order, OrderProduct
 from src.payments import service as payments_service
@@ -39,13 +39,13 @@ class Env:
 async def _setup_order(maker: Maker) -> Env:
     async with maker() as s:
         user = User(display_name="Payer")
-        category = Category(name=f"c-{uuid.uuid4()}")
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
+        category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, category, product_type])
         await s.flush()
         product = Product(
             name="Coffee",
-            category_id=category.id,
+            product_category_id=category.id,
             product_type_id=product_type.id,
             price=Decimal("12.50"),
         )

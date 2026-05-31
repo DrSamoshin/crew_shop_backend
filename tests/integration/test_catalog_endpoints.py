@@ -4,13 +4,32 @@ from typing import Any
 
 from httpx import AsyncClient
 
+from scripts import seed_dev
+
 PRODUCTS = "/v1/catalog/products"
+
+# All seeded products are active, so the catalog list total equals their seed count.
+EXPECTED_PRODUCTS = (
+    len(seed_dev.SEED_COFFEES)
+    + len(seed_dev.SEED_EQUIPMENT)
+    + len(seed_dev.SEED_ACCESSORIES)
+    + len(seed_dev.SEED_CONSUMABLES)
+)
 
 
 async def _items(client: AsyncClient, **params: Any) -> list[dict[str, Any]]:
-    resp = await client.get(PRODUCTS, params={"limit": 100, **params})
-    assert resp.status_code == 200, resp.text
-    return resp.json()["items"]
+    """Collect every matching product across pages (the list is capped at 100 per page)."""
+    collected: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        resp = await client.get(PRODUCTS, params={"limit": 100, "offset": offset, **params})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        collected.extend(body["items"])
+        offset += 100
+        if offset >= body["total"]:
+            break
+    return collected
 
 
 def _names(items: list[dict[str, Any]]) -> set[str]:
@@ -21,16 +40,41 @@ async def test_list_returns_all_active_products(seeded_client: AsyncClient) -> N
     resp = await seeded_client.get(PRODUCTS, params={"limit": 100})
     body = resp.json()
     assert resp.status_code == 200
-    assert body["total"] == 12
-    assert len(body["items"]) == 12
+    assert body["total"] == EXPECTED_PRODUCTS
+    # A single page is capped at 100; the full set is reachable via pagination.
+    assert len(body["items"]) == min(EXPECTED_PRODUCTS, 100)
 
 
 async def test_list_pagination(seeded_client: AsyncClient) -> None:
     resp = await seeded_client.get(PRODUCTS, params={"limit": 5, "offset": 0})
     body = resp.json()
-    assert body["total"] == 12
+    assert body["total"] == EXPECTED_PRODUCTS
     assert len(body["items"]) == 5
     assert body["limit"] == 5 and body["offset"] == 0
+
+
+async def test_list_pagination_walks_every_page(seeded_client: AsyncClient) -> None:
+    """Paging through the whole catalog yields each product exactly once."""
+    seen: set[str] = set()
+    page = 20
+    offset = 0
+    total = None
+    while True:
+        resp = await seeded_client.get(PRODUCTS, params={"limit": page, "offset": offset})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        total = body["total"]
+        items = body["items"]
+        assert len(items) <= page
+        before = len(seen)
+        seen.update(item["id"] for item in items)
+        # No id repeats across pages.
+        assert len(seen) == before + len(items)
+        offset += page
+        if offset >= total:
+            break
+    assert total == EXPECTED_PRODUCTS
+    assert len(seen) == EXPECTED_PRODUCTS
 
 
 async def test_list_includes_rating_aggregate(seeded_client: AsyncClient) -> None:
@@ -135,8 +179,129 @@ async def test_search_query_too_short_returns_422(seeded_client: AsyncClient) ->
 
 
 async def test_list_categories(seeded_client: AsyncClient) -> None:
-    resp = await seeded_client.get("/v1/catalog/categories")
+    resp = await seeded_client.get("/v1/catalog/product-categories")
     body = resp.json()
     assert resp.status_code == 200
     assert body["total"] == 5
     assert "Single Origin" in {category["name"] for category in body["items"]}
+
+
+# ---------------------------------------------------- category-scoped, type-aware filtering
+
+CATEGORIES = "/v1/catalog/product-categories"
+
+
+async def _categories(client: AsyncClient) -> dict[str, dict[str, Any]]:
+    resp = await client.get(CATEGORIES)
+    assert resp.status_code == 200, resp.text
+    return {category["name"]: category for category in resp.json()["items"]}
+
+
+async def test_category_carries_product_type(seeded_client: AsyncClient) -> None:
+    cats = await _categories(seeded_client)
+    assert cats["Single Origin"]["product_type"] == "coffee"
+    assert cats["Equipment"]["product_type"] == "equipment"
+    assert cats["Accessories"]["product_type"] == "accessories"
+    assert cats["Consumables"]["product_type"] == "consumables"
+
+
+async def test_scope_by_category(seeded_client: AsyncClient) -> None:
+    eq_id = (await _categories(seeded_client))["Equipment"]["id"]
+    items = await _items(seeded_client, product_category_id=eq_id)
+    assert items
+    assert all(item["product_type"] == "equipment" for item in items)
+
+
+async def test_filter_price_range(seeded_client: AsyncClient) -> None:
+    items = await _items(seeded_client, price_min="100", price_max="200")
+    assert items
+    assert all(100 <= float(item["price"]) <= 200 for item in items)
+
+
+async def test_filter_inverted_price_range_400(seeded_client: AsyncClient) -> None:
+    resp = await seeded_client.get(PRODUCTS, params={"price_min": "200", "price_max": "100"})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["error_code"] == "CATALOG_INVALID_FILTER"
+
+
+async def test_filter_min_rating(seeded_client: AsyncClient) -> None:
+    items = await _items(seeded_client, min_rating=4)
+    assert items
+    assert all(item["rating"] is not None and item["rating"] >= 4 for item in items)
+
+
+async def test_filter_equipment_type_within_category(seeded_client: AsyncClient) -> None:
+    eq_id = (await _categories(seeded_client))["Equipment"]["id"]
+    items = await _items(seeded_client, product_category_id=eq_id, equipment_type="grinder")
+    assert items
+    assert all(item["equipment"]["equipment_type"] == "grinder" for item in items)
+
+
+async def test_filter_material_within_equipment(seeded_client: AsyncClient) -> None:
+    eq_id = (await _categories(seeded_client))["Equipment"]["id"]
+    items = await _items(seeded_client, product_category_id=eq_id, material="plastic")
+    assert all(item["equipment"]["material"].lower() == "plastic" for item in items)
+
+
+async def test_filter_consumable_pack_range(seeded_client: AsyncClient) -> None:
+    co_id = (await _categories(seeded_client))["Consumables"]["id"]
+    items = await _items(seeded_client, product_category_id=co_id, pack_min=50)
+    assert all(item["consumable"]["quantity_per_pack"] >= 50 for item in items)
+
+
+async def test_type_facet_without_category_400(seeded_client: AsyncClient) -> None:
+    resp = await seeded_client.get(PRODUCTS, params={"equipment_type": "grinder"})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["error_code"] == "CATALOG_INVALID_FILTER"
+
+
+async def test_type_facet_on_wrong_type_category_400(seeded_client: AsyncClient) -> None:
+    co_id = (await _categories(seeded_client))["Single Origin"]["id"]
+    resp = await seeded_client.get(
+        PRODUCTS, params={"product_category_id": co_id, "equipment_type": "grinder"}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["error_code"] == "CATALOG_INVALID_FILTER"
+
+
+async def test_material_without_category_400(seeded_client: AsyncClient) -> None:
+    resp = await seeded_client.get(PRODUCTS, params={"material": "plastic"})
+    assert resp.status_code == 400
+
+
+async def test_unknown_category_scope_400(seeded_client: AsyncClient) -> None:
+    resp = await seeded_client.get(
+        PRODUCTS, params={"product_category_id": "00000000-0000-0000-0000-000000000000"}
+    )
+    assert resp.status_code == 400
+
+
+async def test_facets_coffee_category(seeded_client: AsyncClient) -> None:
+    co_id = (await _categories(seeded_client))["Single Origin"]["id"]
+    resp = await seeded_client.get(f"{CATEGORIES}/{co_id}/facets")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["product_type"] == "coffee"
+    facets = {facet["key"]: facet for facet in body["facets"]}
+    assert facets["region"]["kind"] == "multi"
+    assert facets["region"]["options"]  # dynamic option list from data
+    assert facets["body"]["kind"] == "range" and facets["body"]["min"] == 1
+    assert {opt["value"] for opt in facets["acidity"]["options"]} == {"soft", "balanced", "bright"}
+
+
+async def test_facets_equipment_category(seeded_client: AsyncClient) -> None:
+    eq_id = (await _categories(seeded_client))["Equipment"]["id"]
+    body = (await seeded_client.get(f"{CATEGORIES}/{eq_id}/facets")).json()
+    assert body["product_type"] == "equipment"
+    assert {facet["key"] for facet in body["facets"]} >= {
+        "equipment_type",
+        "material",
+        "power",
+        "warranty",
+    }
+
+
+async def test_facets_unknown_category_404(seeded_client: AsyncClient) -> None:
+    resp = await seeded_client.get(f"{CATEGORIES}/00000000-0000-0000-0000-000000000000/facets")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["error_code"] == "CATEGORY_NOT_FOUND"

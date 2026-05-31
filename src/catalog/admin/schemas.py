@@ -72,7 +72,7 @@ class _ProductWrite(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     image_url: str | None = Field(default=None, max_length=500)
-    category_id: uuid.UUID
+    product_category_id: uuid.UUID
     price: Decimal = Field(gt=0)
     currency: str = Field(default="EUR", min_length=3, max_length=3)
     coffee: CoffeeAttributesIn | None = None
@@ -117,13 +117,16 @@ class ProductUpdate(_ProductWrite):
         return self
 
 
-class CategoryCreate(BaseModel):
+class ProductCategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = None
+    # Each category belongs to exactly one product type (drives its facet set).
+    product_type: ProductTypeName
     is_active: bool = True
 
 
-class CategoryUpdate(BaseModel):
+class ProductCategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
+    product_type: ProductTypeName | None = None
     is_active: bool | None = None

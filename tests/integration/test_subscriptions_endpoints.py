@@ -9,7 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.auth import sessions
-from src.catalog.models import Category, Product, ProductType
+from src.catalog.models import Product, ProductCategory, ProductType
 from src.users.models import User
 
 Maker = async_sessionmaker[AsyncSession]
@@ -25,13 +25,13 @@ class Env:
 async def _setup(maker: Maker, *, active: bool = True) -> Env:
     async with maker() as s:
         user = User(display_name="Subscriber")
-        category = Category(name=f"c-{uuid.uuid4()}")
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
+        category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, category, product_type])
         await s.flush()
         product = Product(
             name="Daily Coffee",
-            category_id=category.id,
+            product_category_id=category.id,
             product_type_id=product_type.id,
             price=Decimal("12.50"),
             is_active=active,

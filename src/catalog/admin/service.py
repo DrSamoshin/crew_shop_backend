@@ -7,32 +7,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.catalog.admin.schemas import (
     AccessoryAttributesIn,
-    CategoryCreate,
-    CategoryUpdate,
     CoffeeAttributesIn,
     EquipmentAttributesIn,
     ProductAttributesIn,
+    ProductCategoryCreate,
+    ProductCategoryUpdate,
     ProductCreate,
     ProductUpdate,
 )
 from src.catalog.enums import ProductTypeName
 from src.catalog.exceptions import (
     CatalogReferenceError,
-    CategoryNotEmptyError,
-    CategoryNotFoundError,
+    ProductCategoryNotEmptyError,
+    ProductCategoryNotFoundError,
     ProductNotFoundError,
     ProductTypeMismatchError,
 )
 from src.catalog.models import (
-    Category,
     Product,
     ProductAccessories,
+    ProductCategory,
     ProductCoffee,
     ProductConsumables,
     ProductEquipment,
     ProductType,
 )
-from src.catalog.schemas.catalog import CategoryDTO, ProductDetailDTO
+from src.catalog.schemas.catalog import ProductCategoryDTO, ProductDetailDTO
 from src.catalog.services.product_service import ProductService
 
 _SubtypeModel = ProductCoffee | ProductEquipment | ProductAccessories | ProductConsumables
@@ -114,19 +114,21 @@ class AdminCatalogService:
             raise CatalogReferenceError("product_type", name.value)
         return type_id
 
-    async def _require_category(self, category_id: uuid.UUID) -> None:
-        exists = await self._db.scalar(select(Category.id).where(Category.id == category_id))
+    async def _require_category(self, product_category_id: uuid.UUID) -> None:
+        exists = await self._db.scalar(
+            select(ProductCategory.id).where(ProductCategory.id == product_category_id)
+        )
         if exists is None:
-            raise CatalogReferenceError("category_id", str(category_id))
+            raise CatalogReferenceError("product_category_id", str(product_category_id))
 
     async def create_product(self, data: ProductCreate) -> ProductDetailDTO:
-        await self._require_category(data.category_id)
+        await self._require_category(data.product_category_id)
         type_id = await self._resolve_product_type(data.product_type)
         product = Product(
             name=data.name,
             description=data.description,
             image_url=data.image_url,
-            category_id=data.category_id,
+            product_category_id=data.product_category_id,
             product_type_id=type_id,
             price=data.price,
             currency=data.currency,
@@ -141,7 +143,7 @@ class AdminCatalogService:
         product = await self._db.get(Product, product_id)
         if product is None:
             raise ProductNotFoundError(str(product_id))
-        await self._require_category(data.category_id)
+        await self._require_category(data.product_category_id)
 
         type_name = await self._db.scalar(
             select(ProductType.name).where(ProductType.id == product.product_type_id)
@@ -156,7 +158,7 @@ class AdminCatalogService:
         product.name = data.name
         product.description = data.description
         product.image_url = data.image_url
-        product.category_id = data.category_id
+        product.product_category_id = data.product_category_id
         product.price = data.price
         product.currency = data.currency
 
@@ -175,32 +177,60 @@ class AdminCatalogService:
         await self._db.delete(product)
         await self._db.flush()
 
-    async def create_category(self, data: CategoryCreate) -> CategoryDTO:
-        category = Category(name=data.name, description=data.description, is_active=data.is_active)
+    async def _product_type_name(self, type_id: uuid.UUID) -> str:
+        name = await self._db.scalar(select(ProductType.name).where(ProductType.id == type_id))
+        if name is None:  # pragma: no cover - FK guarantees existence
+            raise CatalogReferenceError("product_type_id", str(type_id))
+        return name
+
+    async def create_category(self, data: ProductCategoryCreate) -> ProductCategoryDTO:
+        type_id = await self._resolve_product_type(data.product_type)
+        category = ProductCategory(
+            name=data.name,
+            description=data.description,
+            product_type_id=type_id,
+            is_active=data.is_active,
+        )
         self._db.add(category)
         await self._db.flush()
-        return CategoryDTO(id=category.id, name=category.name, description=category.description)
+        return ProductCategoryDTO(
+            id=category.id,
+            name=category.name,
+            description=category.description,
+            product_type=data.product_type.value,
+        )
 
-    async def update_category(self, category_id: uuid.UUID, data: CategoryUpdate) -> CategoryDTO:
-        category = await self._db.get(Category, category_id)
+    async def update_category(
+        self, product_category_id: uuid.UUID, data: ProductCategoryUpdate
+    ) -> ProductCategoryDTO:
+        category = await self._db.get(ProductCategory, product_category_id)
         if category is None:
-            raise CategoryNotFoundError(str(category_id))
+            raise ProductCategoryNotFoundError(str(product_category_id))
         if data.name is not None:
             category.name = data.name
         if data.is_active is not None:
             category.is_active = data.is_active
+        if data.product_type is not None:
+            category.product_type_id = await self._resolve_product_type(data.product_type)
         category.description = data.description
         await self._db.flush()
-        return CategoryDTO(id=category.id, name=category.name, description=category.description)
+        return ProductCategoryDTO(
+            id=category.id,
+            name=category.name,
+            description=category.description,
+            product_type=await self._product_type_name(category.product_type_id),
+        )
 
-    async def delete_category(self, category_id: uuid.UUID) -> None:
-        category = await self._db.get(Category, category_id)
+    async def delete_category(self, product_category_id: uuid.UUID) -> None:
+        category = await self._db.get(ProductCategory, product_category_id)
         if category is None:
-            raise CategoryNotFoundError(str(category_id))
+            raise ProductCategoryNotFoundError(str(product_category_id))
         product_count = await self._db.scalar(
-            select(func.count()).select_from(Product).where(Product.category_id == category_id)
+            select(func.count())
+            .select_from(Product)
+            .where(Product.product_category_id == product_category_id)
         )
         if product_count:
-            raise CategoryNotEmptyError(str(category_id))
+            raise ProductCategoryNotEmptyError(str(product_category_id))
         await self._db.delete(category)
         await self._db.flush()

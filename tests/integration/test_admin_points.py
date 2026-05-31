@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.api.core.configs import settings as app_settings
-from src.catalog.models import Category, ProductType
+from src.catalog.models import ProductCategory, ProductType
 from src.orders.enums import OrderType
 from src.orders.models import Order, OrderPickupInfo
 from src.points.models import Point
@@ -86,8 +86,8 @@ async def _referenced_point(maker: Maker) -> uuid.UUID:
     async with maker() as s:
         user = User(display_name="Buyer")
         point = Point(name="Used", address="addr", type="coffeeshop", hours={}, contacts={})
-        category = Category(name=f"c-{uuid.uuid4()}")
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
+        category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, point, category, product_type])
         await s.flush()
         order = Order(

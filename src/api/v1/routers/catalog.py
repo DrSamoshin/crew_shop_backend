@@ -6,6 +6,7 @@ writes). Errors flow through the shared AppException envelope.
 """
 
 import uuid
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -15,13 +16,15 @@ from src.api.core.database import get_db
 from src.auth.dependencies import optional_auth
 from src.catalog.schemas.catalog import (
     AcidityBucket,
-    CategoryListDTO,
+    CategoryFacetsDTO,
+    ProductCategoryListDTO,
     ProductDetailDTO,
     ProductListDTO,
     SortOption,
     build_product_filters,
 )
-from src.catalog.services.category_service import CategoryService
+from src.catalog.services.facets_service import FacetsService
+from src.catalog.services.product_category_service import ProductCategoryService
 from src.catalog.services.product_service import ProductService
 from src.users.models import User
 
@@ -42,6 +45,12 @@ async def list_products(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     sort: SortOption = SortOption.NEWEST,
+    # Scope to one category; the backend resolves its product_type to validate per-type facets.
+    product_category_id: uuid.UUID | None = None,
+    # Universal facets (valid with or without a category).
+    price_min: Annotated[Decimal | None, Query(gt=0)] = None,
+    price_max: Annotated[Decimal | None, Query(gt=0)] = None,
+    min_rating: Annotated[float | None, Query(ge=0, le=5)] = None,
     # Comma-separated, OR within each facet: flavor keys / regions / roast levels / processing.
     flavor_notes: str | None = None,
     acidity: AcidityBucket | None = None,
@@ -54,8 +63,22 @@ async def list_products(
     sweetness_max: Annotated[int | None, Query(ge=1, le=5)] = None,
     altitude_min: Annotated[int | None, Query(ge=0)] = None,
     altitude_max: Annotated[int | None, Query(ge=0)] = None,
+    # Per-type facets (valid only when product_category_id resolves to the matching type).
+    equipment_type: str | None = None,
+    power_min: Annotated[int | None, Query(ge=0)] = None,
+    power_max: Annotated[int | None, Query(ge=0)] = None,
+    warranty_min: Annotated[int | None, Query(ge=0)] = None,
+    accessory_type: str | None = None,
+    consumable_type: str | None = None,
+    pack_min: Annotated[int | None, Query(ge=1)] = None,
+    pack_max: Annotated[int | None, Query(ge=1)] = None,
+    material: str | None = None,
 ) -> ProductListDTO:
     filters = build_product_filters(
+        product_category_id=product_category_id,
+        price_min=price_min,
+        price_max=price_max,
+        min_rating=min_rating,
         flavor_notes=flavor_notes,
         acidity=acidity,
         region=region,
@@ -67,6 +90,15 @@ async def list_products(
         sweetness_max=sweetness_max,
         altitude_min=altitude_min,
         altitude_max=altitude_max,
+        equipment_type=equipment_type,
+        power_min=power_min,
+        power_max=power_max,
+        warranty_min=warranty_min,
+        accessory_type=accessory_type,
+        consumable_type=consumable_type,
+        pack_min=pack_min,
+        pack_max=pack_max,
+        material=material,
     )
     user_id = user.id if user else None
     return await ProductService(db).list_products(filters, sort, limit, offset, user_id=user_id)
@@ -85,9 +117,20 @@ async def search_products(
     )
 
 
-@router.get("/categories", response_model=CategoryListDTO, summary="List active categories")
-async def list_categories(db: DbDep) -> CategoryListDTO:
-    return await CategoryService(db).list_categories()
+@router.get(
+    "/product-categories", response_model=ProductCategoryListDTO, summary="List active categories"
+)
+async def list_categories(db: DbDep) -> ProductCategoryListDTO:
+    return await ProductCategoryService(db).list_categories()
+
+
+@router.get(
+    "/product-categories/{product_category_id}/facets",
+    response_model=CategoryFacetsDTO,
+    summary="Filter schema and dynamic option lists for a category",
+)
+async def category_facets(product_category_id: uuid.UUID, db: DbDep) -> CategoryFacetsDTO:
+    return await FacetsService(db).get_facets(product_category_id)
 
 
 @router.get(

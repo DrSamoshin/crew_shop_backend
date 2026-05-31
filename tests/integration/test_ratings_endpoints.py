@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.auth import sessions
-from src.catalog.models import Category, Product, ProductType
+from src.catalog.models import Product, ProductCategory, ProductType
 from src.orders.enums import OrderStatus, OrderType
 from src.orders.models import Order, OrderProduct
 from src.users.models import User
@@ -28,20 +28,20 @@ async def _setup(maker: Maker, *, order_status: str = OrderStatus.COMPLETED.valu
     """Seed a user + two products; the first is referenced by an order of ``order_status``."""
     async with maker() as s:
         user = User(display_name="Rater")
-        category = Category(name=f"c-{uuid.uuid4()}")
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
+        category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, category, product_type])
         await s.flush()
 
         product = Product(
             name="Ethiopia",
-            category_id=category.id,
+            product_category_id=category.id,
             product_type_id=product_type.id,
             price=Decimal("12.50"),
         )
         other = Product(
             name="Brewer",
-            category_id=category.id,
+            product_category_id=category.id,
             product_type_id=product_type.id,
             price=Decimal("20.00"),
         )

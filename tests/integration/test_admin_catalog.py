@@ -23,14 +23,14 @@ def admin_headers(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
 
 
 async def _category_id(client: AsyncClient, name: str = "Single Origin") -> str:
-    resp = await client.get("/v1/catalog/categories")
+    resp = await client.get("/v1/catalog/product-categories")
     return next(c["id"] for c in resp.json()["items"] if c["name"] == name)
 
 
-def _coffee_payload(category_id: str) -> dict[str, Any]:
+def _coffee_payload(product_category_id: str) -> dict[str, Any]:
     return {
         "name": "Peru Decaf",
-        "category_id": category_id,
+        "product_category_id": product_category_id,
         "product_type": "coffee",
         "price": "13.00",
         "coffee": {
@@ -47,6 +47,7 @@ def _coffee_payload(category_id: str) -> dict[str, Any]:
 
 
 async def test_create_product(seeded_client: AsyncClient, admin_headers: dict[str, str]) -> None:
+    before = (await seeded_client.get("/v1/catalog/products", params={"limit": 1})).json()["total"]
     payload = _coffee_payload(await _category_id(seeded_client))
     resp = await seeded_client.post(f"{ADMIN}/products", json=payload, headers=admin_headers)
     body = resp.json()
@@ -57,8 +58,8 @@ async def test_create_product(seeded_client: AsyncClient, admin_headers: dict[st
     assert body["rating"] is None and body["rating_count"] == 0
 
     # It now shows up in the public listing.
-    listing = await seeded_client.get("/v1/catalog/products", params={"limit": 100})
-    assert listing.json()["total"] == 13
+    listing = await seeded_client.get("/v1/catalog/products", params={"limit": 1})
+    assert listing.json()["total"] == before + 1
 
 
 async def test_create_rejected_without_token(seeded_client: AsyncClient) -> None:
@@ -144,30 +145,36 @@ async def test_delete_product(seeded_client: AsyncClient, admin_headers: dict[st
 
 async def test_category_crud(seeded_client: AsyncClient, admin_headers: dict[str, str]) -> None:
     created = await seeded_client.post(
-        f"{ADMIN}/categories",
-        json={"name": "Cold Brew", "description": "Ready-to-drink"},
+        f"{ADMIN}/product-categories",
+        json={"name": "Cold Brew", "description": "Ready-to-drink", "product_type": "coffee"},
         headers=admin_headers,
     )
     assert created.status_code == 201
-    category_id = created.json()["id"]
+    assert created.json()["product_type"] == "coffee"
+    product_category_id = created.json()["id"]
 
     updated = await seeded_client.put(
-        f"{ADMIN}/categories/{category_id}",
+        f"{ADMIN}/product-categories/{product_category_id}",
         json={"name": "Cold Brew & RTD"},
         headers=admin_headers,
     )
     assert updated.status_code == 200
     assert updated.json()["name"] == "Cold Brew & RTD"
+    assert updated.json()["product_type"] == "coffee"
 
-    deleted = await seeded_client.delete(f"{ADMIN}/categories/{category_id}", headers=admin_headers)
+    deleted = await seeded_client.delete(
+        f"{ADMIN}/product-categories/{product_category_id}", headers=admin_headers
+    )
     assert deleted.status_code == 204
 
 
 async def test_delete_non_empty_category_conflict(
     seeded_client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
-    category_id = await _category_id(seeded_client)  # Single Origin has seeded coffees
-    resp = await seeded_client.delete(f"{ADMIN}/categories/{category_id}", headers=admin_headers)
+    product_category_id = await _category_id(seeded_client)  # Single Origin has seeded coffees
+    resp = await seeded_client.delete(
+        f"{ADMIN}/product-categories/{product_category_id}", headers=admin_headers
+    )
     assert resp.status_code == 409
     assert resp.json()["error"]["error_code"] == "CATALOG_CATEGORY_NOT_EMPTY"
 

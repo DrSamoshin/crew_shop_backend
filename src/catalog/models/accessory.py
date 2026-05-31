@@ -3,7 +3,7 @@
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import UUID, CheckConstraint, ForeignKey, String
+from sqlalchemy import UUID, CheckConstraint, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +30,8 @@ class ProductAccessories(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(f"accessory_type IN ({_quote_csv(AccessoryType)})", name="accessory_type"),
+        Index("idx_product_accessories_accessory_type", "accessory_type"),
+        Index("idx_product_accessories_material", "material"),
     )
 
     def __repr__(self) -> str:

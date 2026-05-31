@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from scripts import seed_dev
 from src.api.core.utils import utcnow
-from src.catalog.models import Category, Product, ProductType
+from src.catalog.models import Product, ProductCategory, ProductType
 from src.orders.models import Order, OrderDeliveryInfo, OrderPickupInfo, OrderProduct
 from src.points.models import Point
 from src.users.models import User
@@ -36,12 +36,12 @@ async def _make_point(
 async def _make_product(
     session: AsyncSession, *, name: str = "Prod", price: Decimal = Decimal("10.00")
 ) -> Product:
-    category = Category(name=f"cat-{uuid.uuid4()}")
     product_type = ProductType(name=f"type-{uuid.uuid4()}")
+    category = ProductCategory(name=f"cat-{uuid.uuid4()}", product_type=product_type)
     session.add_all([category, product_type])
     await session.flush()
     product = Product(
-        name=name, category_id=category.id, product_type_id=product_type.id, price=price
+        name=name, product_category_id=category.id, product_type_id=product_type.id, price=price
     )
     session.add(product)
     await session.flush()

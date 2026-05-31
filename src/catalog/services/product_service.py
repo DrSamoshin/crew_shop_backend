@@ -4,14 +4,18 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.catalog.exceptions import ProductNotFoundError
+from src.catalog.enums import ProductTypeName
+from src.catalog.exceptions import CatalogInvalidFilterError, ProductNotFoundError
 from src.catalog.models import (
     ProductAccessories,
+    ProductCategory,
     ProductCoffee,
     ProductConsumables,
     ProductEquipment,
+    ProductType,
 )
 from src.catalog.repositories.product_repository import ProductRepository, ProductRow
 from src.catalog.schemas.catalog import (
@@ -26,6 +30,11 @@ from src.catalog.schemas.catalog import (
     SortOption,
 )
 from src.ratings import service as ratings_service
+
+# Each per-type facet group requires its product_type; material is valid for any of the three.
+_MATERIAL_TYPES = frozenset(
+    {ProductTypeName.EQUIPMENT, ProductTypeName.ACCESSORIES, ProductTypeName.CONSUMABLES}
+)
 
 
 def _coffee_dto(coffee: ProductCoffee) -> CoffeeAttributesDTO:
@@ -79,7 +88,7 @@ def _product_kwargs(row: ProductRow) -> dict[str, Any]:
     product, aggregate = row
     return {
         "id": product.id,
-        "category_id": product.category_id,
+        "product_category_id": product.product_category_id,
         "name": product.name,
         "description": product.description,
         "price": product.price,
@@ -123,10 +132,39 @@ class ProductService:
         offset: int,
         user_id: uuid.UUID | None = None,
     ) -> ProductListDTO:
-        rows, total = await self._repo.list_products(filters, sort, limit, offset)
+        product_type = await self._resolve_scope_type(filters)
+        self._validate_type_facets(filters, product_type)
+        rows, total = await self._repo.list_products(filters, sort, limit, offset, product_type)
         items = [_to_product_dto(row) for row in rows]
         await self._enrich(items, user_id)
         return ProductListDTO(items=items, total=total, limit=limit, offset=offset)
+
+    async def _resolve_scope_type(self, filters: ProductFilters) -> ProductTypeName | None:
+        """Resolve the scoped category to its product type (None when unscoped)."""
+        if filters.product_category_id is None:
+            return None
+        name = await self._db.scalar(
+            select(ProductType.name)
+            .join(ProductCategory, ProductCategory.product_type_id == ProductType.id)
+            .where(ProductCategory.id == filters.product_category_id)
+        )
+        if name is None:
+            raise CatalogInvalidFilterError("product_category_id", str(filters.product_category_id))
+        return ProductTypeName(name)
+
+    @staticmethod
+    def _validate_type_facets(
+        filters: ProductFilters, product_type: ProductTypeName | None
+    ) -> None:
+        """A per-type facet is only valid when the scoped category resolves to that type."""
+        if filters.has_equipment_filter and product_type is not ProductTypeName.EQUIPMENT:
+            raise CatalogInvalidFilterError("equipment_type", "requires an equipment category")
+        if filters.has_accessory_filter and product_type is not ProductTypeName.ACCESSORIES:
+            raise CatalogInvalidFilterError("accessory_type", "requires an accessory category")
+        if filters.has_consumable_filter and product_type is not ProductTypeName.CONSUMABLES:
+            raise CatalogInvalidFilterError("consumable_type", "requires a consumable category")
+        if filters.has_material_filter and product_type not in _MATERIAL_TYPES:
+            raise CatalogInvalidFilterError("material", "requires a non-coffee category")
 
     async def get_product(
         self, product_id: uuid.UUID, user_id: uuid.UUID | None = None

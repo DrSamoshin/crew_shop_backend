@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.catalog.models import Category, Product, ProductType
+from src.catalog.models import Product, ProductCategory, ProductType
 from src.subscriptions.models import (
     Subscription,
     SubscriptionDeliveryInfo,
@@ -28,12 +28,12 @@ async def _make_user(session: AsyncSession) -> User:
 
 
 async def _make_product(session: AsyncSession, *, price: Decimal = Decimal("12.50")) -> Product:
-    category = Category(name=f"c-{uuid.uuid4()}")
     product_type = ProductType(name=f"t-{uuid.uuid4()}")
+    category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
     session.add_all([category, product_type])
     await session.flush()
     product = Product(
-        name="Coffee", category_id=category.id, product_type_id=product_type.id, price=price
+        name="Coffee", product_category_id=category.id, product_type_id=product_type.id, price=price
     )
     session.add(product)
     await session.flush()

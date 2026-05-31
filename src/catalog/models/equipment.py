@@ -4,7 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import UUID, CheckConstraint, ForeignKey, Integer, Numeric, String
+from sqlalchemy import UUID, CheckConstraint, ForeignKey, Index, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +44,9 @@ class ProductEquipment(Base, TimestampMixin):
         CheckConstraint("width_cm IS NULL OR width_cm > 0", name="width_positive"),
         CheckConstraint("height_cm IS NULL OR height_cm > 0", name="height_positive"),
         CheckConstraint("depth_cm IS NULL OR depth_cm > 0", name="depth_positive"),
+        Index("idx_product_equipment_equipment_type", "equipment_type"),
+        Index("idx_product_equipment_material", "material"),
+        Index("idx_product_equipment_power_watts", "power_watts"),
     )
 
     def __repr__(self) -> str:

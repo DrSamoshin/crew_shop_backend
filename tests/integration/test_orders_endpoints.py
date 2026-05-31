@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.api.core.configs import settings as app_settings
 from src.auth import sessions
-from src.catalog.models import Category, Product, ProductType
+from src.catalog.models import Product, ProductCategory, ProductType
 from src.points.models import Point
 from src.users.models import User
 
@@ -40,20 +40,20 @@ async def _setup(
             contacts={},
             is_active=point_active,
         )
-        category = Category(name=f"c-{uuid.uuid4()}")
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
+        category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, point, category, product_type])
         await s.flush()
         coffee = Product(
             name="Coffee",
-            category_id=category.id,
+            product_category_id=category.id,
             product_type_id=product_type.id,
             price=Decimal("12.50"),
             is_active=active,
         )
         brewer = Product(
             name="Brewer",
-            category_id=category.id,
+            product_category_id=category.id,
             product_type_id=product_type.id,
             price=Decimal("20.00"),
             is_active=active,

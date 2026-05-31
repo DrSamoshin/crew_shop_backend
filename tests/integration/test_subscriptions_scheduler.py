@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.catalog.models import Category, Product, ProductType
+from src.catalog.models import Product, ProductCategory, ProductType
 from src.orders.enums import OrderStatus
 from src.orders.models import Order
 from src.subscriptions import scheduler
@@ -30,13 +30,13 @@ async def _seed_subscription(
     event_dates: list[date] | None = None,
 ) -> Subscription:
     user = User(display_name="Sub")
-    category = Category(name=f"c-{uuid.uuid4()}")
     product_type = ProductType(name=f"t-{uuid.uuid4()}")
+    category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
     db.add_all([user, category, product_type])
     await db.flush()
     product = Product(
         name="Coffee",
-        category_id=category.id,
+        product_category_id=category.id,
         product_type_id=product_type.id,
         price=Decimal("12.50"),
     )
