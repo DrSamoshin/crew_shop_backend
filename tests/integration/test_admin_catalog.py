@@ -62,6 +62,21 @@ async def test_create_product(seeded_client: AsyncClient, admin_headers: dict[st
     assert listing.json()["total"] == before + 1
 
 
+async def test_image_url_round_trips_on_read(
+    seeded_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    payload = _coffee_payload(await _category_id(seeded_client))
+    payload["name"] = "Imaged Coffee"
+    payload["image_url"] = "https://cdn.example.com/imaged-coffee.jpg"
+    created = await seeded_client.post(f"{ADMIN}/products", json=payload, headers=admin_headers)
+    assert created.status_code == 201, created.text
+    assert created.json()["image_url"] == "https://cdn.example.com/imaged-coffee.jpg"
+    product_id = created.json()["id"]
+
+    detail = await seeded_client.get(f"/v1/catalog/products/{product_id}")
+    assert detail.json()["image_url"] == "https://cdn.example.com/imaged-coffee.jpg"
+
+
 async def test_create_rejected_without_token(seeded_client: AsyncClient) -> None:
     payload = _coffee_payload(await _category_id(seeded_client))
     resp = await seeded_client.post(f"{ADMIN}/products", json=payload)

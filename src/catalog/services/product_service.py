@@ -91,6 +91,7 @@ def _product_kwargs(row: ProductRow) -> dict[str, Any]:
         "product_category_id": product.product_category_id,
         "name": product.name,
         "description": product.description,
+        "image_url": product.image_url,
         "price": product.price,
         "currency": product.currency,
         "product_type": product.product_type.name,

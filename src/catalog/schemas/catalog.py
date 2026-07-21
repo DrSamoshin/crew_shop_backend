@@ -95,6 +95,7 @@ class ProductDTO(BaseModel):
     product_category_id: uuid.UUID
     name: str
     description: str | None
+    image_url: str | None
     price: DecimalStr
     currency: str
     product_type: str

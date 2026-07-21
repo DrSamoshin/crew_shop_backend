@@ -166,6 +166,28 @@ async def test_product_detail_not_found(seeded_client: AsyncClient) -> None:
     assert resp.json()["error"]["error_code"] == "PRODUCT_NOT_FOUND"
 
 
+async def test_list_and_detail_expose_image_url(seeded_client: AsyncClient) -> None:
+    items = {item["name"]: item for item in await _items(seeded_client)}
+    listed = items["Ethiopia Yirgacheffe"]
+    # Seeded products carry no image; the field is present and null.
+    assert "image_url" in listed and listed["image_url"] is None
+
+    detail = (await seeded_client.get(f"{PRODUCTS}/{listed['id']}")).json()
+    assert "image_url" in detail and detail["image_url"] is None
+
+
+async def test_search_exposes_image_url(seeded_client: AsyncClient) -> None:
+    body = (await seeded_client.get("/v1/catalog/search", params={"q": "ethiopia"})).json()
+    assert body["items"]
+    assert all("image_url" in item for item in body["items"])
+
+
+async def test_openapi_lists_image_url_on_read_dtos(seeded_client: AsyncClient) -> None:
+    schemas = (await seeded_client.get("/openapi.json")).json()["components"]["schemas"]
+    assert "image_url" in schemas["ProductDTO"]["properties"]
+    assert "image_url" in schemas["ProductDetailDTO"]["properties"]
+
+
 async def test_search_by_name(seeded_client: AsyncClient) -> None:
     resp = await seeded_client.get("/v1/catalog/search", params={"q": "ethiopia"})
     body = resp.json()
