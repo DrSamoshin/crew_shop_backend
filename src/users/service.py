@@ -54,9 +54,11 @@ def _validate_timezone(value: str | None) -> None:
 # --------------------------------------------------------------------- helpers
 
 
-async def create_user(db: AsyncSession, display_name: str) -> User:
+async def create_user(
+    db: AsyncSession, display_name: str, auth_user_id: uuid.UUID | None = None
+) -> User:
     """Create a user with default preferences; flushed so the id is available."""
-    user = User(display_name=display_name)
+    user = User(display_name=display_name, auth_user_id=auth_user_id)
     db.add(user)
     await db.flush()
     db.add(UserPreferences(user_id=user.id))  # defaults: language=en, timezone=UTC
@@ -127,25 +129,27 @@ async def update_preferences(
 
 
 async def delete_account(db: AsyncSession, user_id: uuid.UUID, mode: str = "hard") -> None:
-    """Sign the user out, then soft-deactivate or hard-anonymize the account.
+    """Soft-deactivate or hard-anonymize the account.
 
     Orders, subscriptions and ratings are preserved (see the User entity deletion strategies).
-    """
-    # Local imports avoid a circular dependency (auth.service imports users.service.create_user).
-    from src.auth.service import delete_oauth_account
-    from src.auth.sessions import revoke_all_sessions
 
+    Neither mode revokes the caller's crew_auth tokens — crew_auth exposes no revoke
+    endpoint. Access is cut off by ``is_active``, which ``require_auth`` enforces on every
+    request, so an outstanding access token stops working immediately regardless.
+
+    A hard delete additionally detaches ``auth_user_id``. The row stays as a tombstone
+    carrying the order history, and the same person signing in again lands in a genuinely
+    new account rather than back inside their deleted one.
+    """
     user = await get_user(db, user_id)
     if user is None or not user.is_active:
         raise UserNotFoundError()
 
-    await revoke_all_sessions(db, user_id)
-
     if mode == "soft":
         user.is_active = False
     else:
-        await delete_oauth_account(db, user_id)
         await db.execute(delete(UserPreferences).where(UserPreferences.user_id == user_id))
+        user.auth_user_id = None
         user.email = None
         user.display_name = f"User-{str(user_id)[:8]}"
         user.is_active = False

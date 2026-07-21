@@ -1,21 +1,19 @@
 """User profile and preferences models."""
 
 import uuid
-from typing import TYPE_CHECKING
 
 from sqlalchemy import UUID, Boolean, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.api.core.database import Base, TimestampMixin
 
-if TYPE_CHECKING:
-    from src.auth.models import OAuthAccount
-
 
 class User(Base, TimestampMixin):
-    """User account. OAuth identity lives in OAuthAccount; users are identified by UUID.
+    """User account, anchored to a crew_auth platform identity via ``auth_user_id``.
 
-    Email is optional and not unique (Apple privacy relay may hide or vary it).
+    ``id`` is local and never leaves crew_shop; ``auth_user_id`` is the identifier used
+    at every external surface. Email is user-supplied, optional and not unique — it is
+    not an identity key (crew_auth exposes none, and Apple's relay makes it unreliable).
     """
 
     __tablename__ = "users"
@@ -23,19 +21,15 @@ class User(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID, primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
     )
+    # Nullable so anonymised accounts keep a tombstone row while the person is free to
+    # sign up again as a genuinely new customer. Postgres allows many NULLs under UNIQUE.
+    auth_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID, nullable=True, unique=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
 
-    oauth_account: Mapped["OAuthAccount"] = relationship(
-        back_populates="user",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        uselist=False,
-        lazy="noload",
-    )
     preferences: Mapped["UserPreferences"] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",

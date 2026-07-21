@@ -1,9 +1,10 @@
 """Idempotent dev/test seed, run by the Docker `init` service after migrations.
 
-Loads a baseline dataset using the ORM models: known dev users (OAuth accounts +
-preferences) and a representative catalog (categories, product types, products with
-their type-specific attributes, and compatibility links). Dev/test only — refuses to
-run in stage/prod. Re-running is a no-op (idempotent on natural keys).
+Loads a baseline dataset using the ORM models: known dev users (anchored to fixed
+crew_auth platform ids, with preferences) and a representative catalog (categories,
+product types, products with their type-specific attributes, and compatibility links).
+Dev/test only — refuses to run in stage/prod. Re-running is a no-op (idempotent on
+natural keys).
 
 Entry point: ``python -m scripts.seed_dev``.
 """
@@ -22,8 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.core.configs import settings
 from src.api.core.database import async_session_maker
 from src.api.core.utils import utcnow
-from src.auth.enums import Provider
-from src.auth.models import OAuthAccount
 from src.catalog.enums import (
     AccessoryType,
     ConsumableType,
@@ -60,63 +59,46 @@ _ALLOWED_ENVS = {"dev", "test"}
 
 @dataclass(frozen=True, slots=True)
 class SeedUser:
-    """A deterministic seed identity. Login matches on ``(provider, provider_id)``."""
+    """A deterministic seed identity, keyed by its crew_auth platform id."""
 
-    provider: str
-    provider_id: str
+    auth_user_id: uuid.UUID
     email: str
     display_name: str
 
 
-# Deterministic baseline identities so tests/clients can rely on them.
-# - The first is a placeholder (fake provider_id) for data presence only — not loggable.
-# - The second is a real Google identity (its `sub`), so it can actually sign in locally
-#   as long as the same Google client ID is used.
+# Fixed platform ids so tests and clients can rely on them. These are local placeholders:
+# crew_auth mints the real ones, so a seeded user cannot actually sign in unless crew_auth
+# happens to issue the same `sub`. They exist to give the dev database populated accounts
+# with orders and ratings, not to provide a working login.
+DEV_USER_AUTH_ID = uuid.UUID("00000000-0000-4000-8000-00000000d001")
+OWNER_USER_AUTH_ID = uuid.UUID("00000000-0000-4000-8000-00000000d002")
+
 SEED_USERS: tuple[SeedUser, ...] = (
-    SeedUser(Provider.GOOGLE.value, "seed-google-0001", "dev@crew.shop", "Dev User"),
-    SeedUser(
-        Provider.GOOGLE.value,
-        "107265641798951898114",
-        "gds.grey@gmail.com",
-        "Сергей Самошин",
-    ),
+    SeedUser(DEV_USER_AUTH_ID, "dev@crew.shop", "Dev User"),
+    SeedUser(OWNER_USER_AUTH_ID, "gds.grey@gmail.com", "Сергей Самошин"),
 )
 
 
 async def _seed_user(session: AsyncSession, spec: SeedUser) -> bool:
     """Create one seed user if absent. Returns True if created, False if skipped."""
     existing = await session.scalar(
-        select(func.count())
-        .select_from(OAuthAccount)
-        .where(
-            OAuthAccount.provider == spec.provider,
-            OAuthAccount.provider_id == spec.provider_id,
-        )
+        select(func.count()).select_from(User).where(User.auth_user_id == spec.auth_user_id)
     )
     if existing:
-        logger.info("seed: %s/%s already present — skipped", spec.provider, spec.provider_id)
+        logger.info("seed: user %s already present — skipped", spec.auth_user_id)
         return False
 
-    user = User(display_name=spec.display_name, email=spec.email)
+    user = User(display_name=spec.display_name, email=spec.email, auth_user_id=spec.auth_user_id)
     session.add(user)
     await session.flush()
-    session.add(
-        OAuthAccount(
-            user_id=user.id,
-            provider=spec.provider,
-            provider_id=spec.provider_id,
-            provider_email=spec.email,
-            provider_name=spec.display_name,
-        )
-    )
     session.add(UserPreferences(user_id=user.id))
     await session.flush()
-    logger.info("seed: created %s (%s/%s)", user.id, spec.provider, spec.provider_id)
+    logger.info("seed: created user %s (auth_user_id=%s)", user.id, spec.auth_user_id)
     return True
 
 
 async def seed_users(session: AsyncSession) -> int:
-    """Create any missing baseline users (by the OAuth natural key). Returns the count created."""
+    """Create any missing baseline users (by ``auth_user_id``). Returns the count created."""
     created = 0
     for spec in SEED_USERS:
         if await _seed_user(session, spec):
@@ -746,34 +728,36 @@ async def seed_catalog(session: AsyncSession) -> int:
 
 @dataclass(frozen=True, slots=True)
 class RatingSpec:
-    """A seed rating: a seed user (by OAuth provider_id) rating a product (by name)."""
+    """A seed rating: a seed user (by ``auth_user_id``) rating a product (by name)."""
 
     product: str
-    provider_id: str
+    auth_user_id: uuid.UUID
     score: int
 
 
 # A subset of products is rated by the seed users; the rest stay unrated so the catalog
 # exercises both the "has rating" and "no rating" paths.
 SEED_RATINGS: tuple[RatingSpec, ...] = (
-    RatingSpec("Ethiopia Yirgacheffe", "seed-google-0001", 5),
-    RatingSpec("Ethiopia Yirgacheffe", "107265641798951898114", 4),
-    RatingSpec("Colombia Huila", "seed-google-0001", 4),
-    RatingSpec("Colombia Huila", "107265641798951898114", 4),
-    RatingSpec("Brazil Cerrado", "seed-google-0001", 3),
-    RatingSpec("Kenya Nyeri AA", "107265641798951898114", 5),
-    RatingSpec("Gaggia Classic Pro", "seed-google-0001", 5),
-    RatingSpec("Gaggia Classic Pro", "107265641798951898114", 4),
-    RatingSpec("Baratza Encore Grinder", "seed-google-0001", 4),
+    RatingSpec("Ethiopia Yirgacheffe", DEV_USER_AUTH_ID, 5),
+    RatingSpec("Ethiopia Yirgacheffe", OWNER_USER_AUTH_ID, 4),
+    RatingSpec("Colombia Huila", DEV_USER_AUTH_ID, 4),
+    RatingSpec("Colombia Huila", OWNER_USER_AUTH_ID, 4),
+    RatingSpec("Brazil Cerrado", DEV_USER_AUTH_ID, 3),
+    RatingSpec("Kenya Nyeri AA", OWNER_USER_AUTH_ID, 5),
+    RatingSpec("Gaggia Classic Pro", DEV_USER_AUTH_ID, 5),
+    RatingSpec("Gaggia Classic Pro", OWNER_USER_AUTH_ID, 4),
+    RatingSpec("Baratza Encore Grinder", DEV_USER_AUTH_ID, 4),
 )
 
 
 async def seed_ratings(session: AsyncSession) -> int:
     """Create seed ratings and rebuild the affected aggregates. Idempotent per (product, user)."""
-    user_by_provider = {
-        provider_id: user_id
-        for provider_id, user_id in (
-            await session.execute(select(OAuthAccount.provider_id, OAuthAccount.user_id))
+    user_by_auth_id = {
+        auth_user_id: user_id
+        for auth_user_id, user_id in (
+            await session.execute(
+                select(User.auth_user_id, User.id).where(User.auth_user_id.is_not(None))
+            )
         ).all()
     }
     product_ids: dict[str, uuid.UUID | None] = {}
@@ -786,7 +770,7 @@ async def seed_ratings(session: AsyncSession) -> int:
                 select(Product.id).where(Product.name == spec.product)
             )
         product_id = product_ids[spec.product]
-        user_id = user_by_provider.get(spec.provider_id)
+        user_id = user_by_auth_id.get(spec.auth_user_id)
         if product_id is None or user_id is None:
             continue
         exists = await session.scalar(
@@ -866,7 +850,7 @@ class OrderItemSpec:
 class OrderSpec:
     """A sample pickup order: a seed user, a seed point, and items. Keyed by ``pickup_code``."""
 
-    provider_id: str
+    auth_user_id: uuid.UUID
     point: str
     pickup_code: str
     items: tuple[OrderItemSpec, ...]
@@ -874,7 +858,7 @@ class OrderSpec:
 
 SEED_ORDERS: tuple[OrderSpec, ...] = (
     OrderSpec(
-        provider_id="seed-google-0001",
+        auth_user_id=DEV_USER_AUTH_ID,
         point="Crew Coffee Downtown",
         pickup_code="100001",
         items=(
@@ -895,7 +879,7 @@ async def seed_orders(session: AsyncSession) -> int:
         if exists is not None:
             continue
         user_id = await session.scalar(
-            select(OAuthAccount.user_id).where(OAuthAccount.provider_id == spec.provider_id)
+            select(User.id).where(User.auth_user_id == spec.auth_user_id)
         )
         point_id = await session.scalar(select(Point.id).where(Point.name == spec.point))
         if user_id is None or point_id is None:
