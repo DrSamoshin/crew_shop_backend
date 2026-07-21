@@ -18,6 +18,7 @@ class ProductCategoryService:
                 name=category.name,
                 description=category.description,
                 product_type=category.product_type.name,
+                is_active=category.is_active,
             )
             for category in categories
         ]

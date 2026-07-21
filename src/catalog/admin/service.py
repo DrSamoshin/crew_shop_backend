@@ -32,7 +32,12 @@ from src.catalog.models import (
     ProductEquipment,
     ProductType,
 )
-from src.catalog.schemas.catalog import ProductCategoryDTO, ProductDetailDTO
+from src.catalog.repositories.product_category_repository import ProductCategoryRepository
+from src.catalog.schemas.catalog import (
+    ProductCategoryDTO,
+    ProductCategoryListDTO,
+    ProductDetailDTO,
+)
 from src.catalog.services.product_service import ProductService
 
 _SubtypeModel = ProductCoffee | ProductEquipment | ProductAccessories | ProductConsumables
@@ -198,6 +203,7 @@ class AdminCatalogService:
             name=category.name,
             description=category.description,
             product_type=data.product_type.value,
+            is_active=category.is_active,
         )
 
     async def update_category(
@@ -219,7 +225,23 @@ class AdminCatalogService:
             name=category.name,
             description=category.description,
             product_type=await self._product_type_name(category.product_type_id),
+            is_active=category.is_active,
         )
+
+    async def list_categories(self) -> ProductCategoryListDTO:
+        """All categories (active + inactive) with their product type — admin-facing."""
+        categories = await ProductCategoryRepository(self._db).list_all()
+        items = [
+            ProductCategoryDTO(
+                id=category.id,
+                name=category.name,
+                description=category.description,
+                product_type=category.product_type.name,
+                is_active=category.is_active,
+            )
+            for category in categories
+        ]
+        return ProductCategoryListDTO(items=items, total=len(items))
 
     async def delete_category(self, product_category_id: uuid.UUID) -> None:
         category = await self._db.get(ProductCategory, product_category_id)

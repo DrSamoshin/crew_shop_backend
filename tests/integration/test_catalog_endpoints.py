@@ -206,6 +206,13 @@ async def test_list_categories(seeded_client: AsyncClient) -> None:
     assert resp.status_code == 200
     assert body["total"] == 5
     assert "Single Origin" in {category["name"] for category in body["items"]}
+    # The public listing is active-only, so every item carries is_active = true.
+    assert all(category["is_active"] is True for category in body["items"])
+
+
+async def test_openapi_lists_category_is_active(seeded_client: AsyncClient) -> None:
+    schemas = (await seeded_client.get("/openapi.json")).json()["components"]["schemas"]
+    assert "is_active" in schemas["ProductCategoryDTO"]["properties"]
 
 
 # ---------------------------------------------------- category-scoped, type-aware filtering

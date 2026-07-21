@@ -183,6 +183,33 @@ async def test_category_crud(seeded_client: AsyncClient, admin_headers: dict[str
     assert deleted.status_code == 204
 
 
+async def test_admin_list_categories_includes_inactive(
+    seeded_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    created = await seeded_client.post(
+        f"{ADMIN}/product-categories",
+        json={"name": "Hidden Brews", "product_type": "coffee", "is_active": False},
+        headers=admin_headers,
+    )
+    assert created.status_code == 201
+
+    listing = await seeded_client.get(f"{ADMIN}/product-categories", headers=admin_headers)
+    assert listing.status_code == 200
+    by_name = {c["name"]: c for c in listing.json()["items"]}
+    assert by_name["Hidden Brews"]["is_active"] is False
+    assert by_name["Single Origin"]["is_active"] is True
+
+    # The public storefront listing still hides the inactive category.
+    public = await seeded_client.get("/v1/catalog/product-categories")
+    assert "Hidden Brews" not in {c["name"] for c in public.json()["items"]}
+
+
+async def test_admin_list_categories_requires_token(seeded_client: AsyncClient) -> None:
+    resp = await seeded_client.get(f"{ADMIN}/product-categories")
+    assert resp.status_code == 403
+    assert resp.json()["error"]["error_code"] == "CATALOG_ADMIN_FORBIDDEN"
+
+
 async def test_delete_non_empty_category_conflict(
     seeded_client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:

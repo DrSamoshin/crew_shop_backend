@@ -20,7 +20,11 @@ from src.catalog.admin.schemas import (
     ProductUpdate,
 )
 from src.catalog.admin.service import AdminCatalogService
-from src.catalog.schemas.catalog import ProductCategoryDTO, ProductDetailDTO
+from src.catalog.schemas.catalog import (
+    ProductCategoryDTO,
+    ProductCategoryListDTO,
+    ProductDetailDTO,
+)
 
 router = APIRouter(prefix="/admin/catalog", tags=["catalog-admin"])
 
@@ -57,6 +61,15 @@ async def update_product(
 async def delete_product(product_id: uuid.UUID, db: DbDep, caller: CallerDep) -> None:
     await AdminCatalogService(db).delete_product(product_id)
     audit(caller, "delete", f"product:{product_id}")
+
+
+@router.get(
+    "/product-categories",
+    response_model=ProductCategoryListDTO,
+    summary="List all categories (active and inactive)",
+)
+async def list_categories(db: DbDep, caller: CallerDep) -> ProductCategoryListDTO:
+    return await AdminCatalogService(db).list_categories()
 
 
 @router.post(

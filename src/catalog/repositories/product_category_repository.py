@@ -20,3 +20,12 @@ class ProductCategoryRepository:
             .order_by(ProductCategory.name.asc())
         )
         return list(result.all())
+
+    async def list_all(self) -> list[ProductCategory]:
+        """Every category, active and inactive (with their product type), alphabetical."""
+        result = await self._db.scalars(
+            select(ProductCategory)
+            .options(joinedload(ProductCategory.product_type))
+            .order_by(ProductCategory.name.asc())
+        )
+        return list(result.all())

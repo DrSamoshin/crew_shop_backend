@@ -133,6 +133,8 @@ class ProductCategoryDTO(BaseModel):
     # The category's single product type (coffee | equipment | accessories | consumables);
     # drives which facet set the storefront renders for the category.
     product_type: str
+    # Always true on the public listing (it filters inactive out); the admin listing returns both.
+    is_active: bool
 
 
 class ProductCategoryListDTO(BaseModel):
