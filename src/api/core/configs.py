@@ -1,10 +1,41 @@
 from typing import Literal
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import URL
 
 import src.bootstrap  # noqa: F401 - load .env before Settings is instantiated
+
+_ASYNC_SCHEME = "postgresql+asyncpg"
+# libpq spells the SSL mode `sslmode`; asyncpg's connect() only knows `ssl` and has no
+# **kwargs, so an untranslated `sslmode` is a TypeError on the first connection.
+_SSL_MODE_TO_ASYNCPG = {
+    "disable": "disable",
+    "allow": "prefer",
+    "prefer": "prefer",
+    "require": "require",
+    "verify-ca": "verify-ca",
+    "verify-full": "verify-full",
+}
+
+
+def normalize_database_url(url: str) -> str:
+    """Adapt a stock libpq DSN to the async driver this service uses.
+
+    Managed providers hand out `postgresql://…?sslmode=require` — DigitalOcean's Terraform
+    output included. SQLAlchemy would resolve that to psycopg2 and fail on import, so the
+    scheme is pinned to asyncpg and the SSL parameter translated. A DSN that already names
+    a driver is left alone: an explicit choice beats a guess.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "postgresql":
+        return url
+
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    translated = [
+        ("ssl", _SSL_MODE_TO_ASYNCPG.get(value, value)) if key == "sslmode" else (key, value)
+        for key, value in query
+    ]
+    return urlunparse(parsed._replace(scheme=_ASYNC_SCHEME, query=urlencode(translated)))
 
 
 class Settings(BaseSettings):
@@ -37,14 +68,10 @@ class Settings(BaseSettings):
     # value; a real provider plugs its own scheme in. Unset → callbacks are rejected.
     payment_provider_secret: str | None = None
 
-    # Database - dev (simple URL string)
+    # Database. One complete DSN in every environment: locally from .env.dev, in the
+    # cluster from the crew-shop-db Secret. The old stage/prod path assembled a Cloud SQL
+    # Unix-socket URL from four parts; managed PostgreSQL is reached over plain TCP.
     database_url: str | None = None
-
-    # Database - stage/prod (Cloud SQL connection parts)
-    database_user: str | None = None
-    database_password: str | None = None
-    database_name: str | None = None
-    database_host: str | None = None  # Cloud SQL socket path
 
     @property
     def is_dev(self) -> bool:
@@ -54,44 +81,23 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
-    def get_database_url(self) -> str | URL:
-        """Build the database URL based on the environment."""
-        if self.env == "dev":
-            if not self.database_url:
-                raise ValueError("DATABASE_URL is required for the dev environment")
-            return self.database_url
-
-        if not all(
-            [self.database_user, self.database_password, self.database_name, self.database_host]
-        ):
-            raise ValueError(
-                "DATABASE_USER, DATABASE_PASSWORD, DATABASE_NAME, and DATABASE_HOST "
-                "are required for stage/prod environments"
-            )
-        return URL.create(
-            "postgresql+asyncpg",
-            username=self.database_user,
-            password=self.database_password,  # automatically URL-encoded
-            database=self.database_name,
-            query={"host": f"/cloudsql/{self.database_host}"},
-        )
+    def get_database_url(self) -> str:
+        """Return the configured DSN, or fail loudly rather than booting unconfigured."""
+        if not self.database_url:
+            raise ValueError(f"DATABASE_URL is required (env={self.env})")
+        return normalize_database_url(self.database_url)
 
     def get_database_url_masked(self) -> str:
         """Get the database URL with the password masked, for logging."""
-        if self.env == "dev":
-            if not self.database_url:
-                return "not configured"
-            parsed = urlparse(self.database_url)
-            if parsed.password and parsed.hostname:
-                netloc = f"{parsed.username}:***@{parsed.hostname}"
-                if parsed.port:
-                    netloc = f"{netloc}:{parsed.port}"
-                return urlunparse(parsed._replace(netloc=netloc))
-            return self.database_url
-        return (
-            f"postgresql+asyncpg://{self.database_user}:***@"
-            f"/cloudsql/{self.database_host}/{self.database_name}"
-        )
+        if not self.database_url:
+            return "not configured"
+        parsed = urlparse(self.database_url)
+        if parsed.password and parsed.hostname:
+            netloc = f"{parsed.username}:***@{parsed.hostname}"
+            if parsed.port:
+                netloc = f"{netloc}:{parsed.port}"
+            return urlunparse(parsed._replace(netloc=netloc))
+        return self.database_url
 
 
 settings = Settings()

@@ -9,9 +9,13 @@ __pycache__/
 env/
 venv/
 
-# Secrets (provided via compose env_file / environment, never baked in)
+# Secrets (provided via compose env_file / environment, never baked in).
+# .secrets/ is listed even though the directory is gone: COPY . . would otherwise ship
+# any credential dropped there straight into a pushed image, which is how the old Apple
+# .p8 and Google client secret ended up published.
 .env
 .env.*
+.secrets/
 
 # IDE
 .vscode/

@@ -39,7 +39,7 @@ Full command reference (Docker lifecycle, migrations, host vs in-container) live
 Configuration is **environment-driven** through `ENV` (`dev` | `stage` | `prod`), and several behaviors branch on it. Understanding this split is essential:
 
 - **`src/bootstrap.py` must load before any `Settings` is instantiated.** It reads `ENV` and, for `dev` only, loads `.env.<env>` (e.g. `.env.dev`) via python-dotenv. In `stage`/`prod` no file is loaded — config comes from the real environment. `configs.py` imports `bootstrap` at module top precisely to guarantee this ordering; do not break that import.
-- **Database URL is built differently per env** (`Settings.get_database_url`): `dev` uses a single `DATABASE_URL` string; `stage`/`prod` assemble a Cloud SQL URL from `DATABASE_USER/PASSWORD/NAME/HOST` parts, connecting over a `/cloudsql/<host>` Unix socket. `get_database_url_masked()` is the logging-safe variant (password redacted) — use it whenever a URL is logged.
+- **Database URL is one complete DSN in every environment** (`Settings.get_database_url`): `DATABASE_URL`, from `.env.dev` locally and from the `crew-shop-db` Kubernetes Secret in the cluster. It fails loudly rather than booting unconfigured. `get_database_url_masked()` is the logging-safe variant (password redacted) — use it whenever a URL is logged.
 - **`runner.py` also branches on env**: `prod`/`stage` `os.execvp` into gunicorn (uvicorn workers, `gunicorn.conf.py`); `dev` runs uvicorn in-process with reload.
 - Copy `.env.example` to `.env.dev` for local work. `.env.*` is git-ignored except the example.
 
@@ -47,7 +47,7 @@ Configuration is **environment-driven** through `ENV` (`dev` | `stage` | `prod`)
 
 Single `src` package, layered under `src/api`. App wiring flows through `create_app()` in `src/api/app.py`: it builds the `FastAPI` instance, then in order registers **exception handlers → middleware → the v1 router**. A module-level `fastapi_app = create_app()` is what gunicorn/uvicorn import (`src:fastapi_app`).
 
-- **Routing is versioned.** `src/api/v1/__init__.py` exposes `api_router` mounted at `/v1`; feature routers (currently just `health`) are included there. New endpoints belong under `src/api/v1/routers/` with Pydantic schemas in `src/api/v1/schemas/`.
+- **Routing is versioned.** `src/api/v1/__init__.py` exposes `api_router` mounted at `/v1`; feature routers (health, auth, catalog, admin catalog, orders, admin orders, users, ratings, points, admin points, subscriptions, payments, payment methods) are included there. New endpoints belong under `src/api/v1/routers/` with Pydantic schemas in `src/api/v1/schemas/`.
 - **Database access** (`src/api/core/database.py`): async SQLAlchemy 2.0 engine + `async_sessionmaker`. Inject sessions via the `get_db` FastAPI dependency, which **commits on success and rolls back on exception** automatically — endpoints should not commit manually. New ORM models extend `Base`; use `TimestampMixin` for `created_at`/`updated_at`. `close_db()` is called from the lifespan handler on shutdown.
 - **Errors are returned in a single envelope.** Raise `AppException` (from `src/api/exceptions.py`) for app-level errors; handlers in `src/api/exception_handlers.py` convert every error class (`AppException`, `RequestValidationError`, Starlette `HTTPException`, and uncaught `Exception`) into `{"error": {error_code, status_code, message, request_id}}`. Add new error types as `AppException` subclasses rather than returning ad-hoc JSON.
 - **Request logging middleware** (`src/api/middleware/logging.py`) assigns a `request_id` to `request.state` (consumed by the error envelope), logs each completed request, and sets `X-Request-ID` / `X-Process-Time` headers. CORS is configured first so preflight is handled before logging. Allowed origins come only from `CORS_ORIGINS` settings — never hardcode them.
@@ -55,7 +55,10 @@ Single `src` package, layered under `src/api`. App wiring flows through `create_
 
 - **Migrations** (`alembic/`, async): `env.py` reads the URL from settings (not `alembic.ini`) and targets `Base.metadata`, which carries a `NAMING_CONVENTION` for deterministic autogenerate. New models must be imported in `env.py` to be seen. In the runtime Docker image use `alembic ...` directly (`uv` is build-stage only).
 
-The scaffolding (app, Docker, migrations) is complete, but there are **no ORM models or feature migrations yet** (`alembic/versions/` is empty) — the domain layer is the next thing to build.
+The domain layer is built out: eight domains (`auth`, `catalog`, `orders`, `payments`, `points`, `ratings`, `subscriptions`, `users`), fourteen routers under `/v1`, and a linear chain of migrations in `alembic/versions/`.
+
+- **Authentication is delegated to crew_auth.** crew_shop issues no tokens. The SPA posts crew_auth's one-time code to `POST /v1/auth/session`; the code is redeemed server-side (`src/auth/crew_auth.py`) and the account is upserted on `users.auth_user_id`. Access tokens are crew_auth's RS256 JWTs, verified locally against its JWKS (`src/auth/jwks.py`) — no network call per request, and a crew_auth outage does not take authenticated traffic down. `users.id` is local and never leaves crew_shop; `auth_user_id` is the identifier for every external surface (admin API, logs, cross-service references).
+- **Deployment is DigitalOcean, not Google Cloud.** Images go to GHCR and ArgoCD rolls them out on DOKS; migrations run as a `PreSync` hook Job. There is no Cloud Run, Cloud SQL, Artifact Registry or Firebase path left in this repo — do not reintroduce one.
 
 ---
 title: Conventions
