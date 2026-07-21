@@ -11,7 +11,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.api.core.configs import settings as app_settings
-from src.auth import sessions
 from src.catalog.models import Product, ProductCategory, ProductType
 from src.payments.provider import (
     ChargeRequest,
@@ -27,6 +26,7 @@ from src.subscriptions.models import (
     SubscriptionPayment,
 )
 from src.users.models import User
+from tests.integration.crew_auth_stub import mint_access_token
 
 Maker = async_sessionmaker[AsyncSession]
 
@@ -40,7 +40,7 @@ class Env:
 
 async def _setup(maker: Maker) -> Env:
     async with maker() as s:
-        user = User(display_name="Subscriber")
+        user = User(display_name="Subscriber", auth_user_id=uuid.uuid4())
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
         category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, category, product_type])
@@ -53,7 +53,7 @@ async def _setup(maker: Maker) -> Env:
         )
         s.add(product)
         await s.flush()
-        access, _ = await sessions.create_session(s, user.id)
+        access = mint_access_token(user.auth_user_id)
         await s.commit()
         return Env(user.id, product.id, access)
 
@@ -288,7 +288,7 @@ class _CountingProvider(FakeProvider):
 
 async def _seed_sub_for_extension(maker: Maker, today: date) -> uuid.UUID:
     async with maker() as s:
-        user = User(display_name="Sub")
+        user = User(display_name="Sub", auth_user_id=uuid.uuid4())
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
         category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, category, product_type])

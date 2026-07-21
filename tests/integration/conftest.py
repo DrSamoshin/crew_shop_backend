@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-import src.auth.models  # noqa: F401 - register mappers on Base.metadata
 import src.catalog.models  # noqa: F401 - register mappers on Base.metadata
 import src.orders.models  # noqa: F401 - register mappers on Base.metadata
 import src.payments.models  # noqa: F401 - register mappers on Base.metadata
@@ -29,8 +28,24 @@ from scripts import seed_dev
 from src.api.app import create_app
 from src.api.core.configs import settings
 from src.api.core.database import Base, get_db
+from tests.integration import crew_auth_stub
 
 TEST_DB_NAME = "crew_shop_test"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def crew_auth() -> AsyncGenerator[crew_auth_stub.CrewAuthStub]:
+    """Serve crew_auth in-process for every test, so token verification is never networked.
+
+    Autouse because any authenticated request needs the JWKS; tests that care about the
+    exchange or refresh behaviour take the stub as an argument and configure it.
+    """
+    stub = crew_auth_stub.CrewAuthStub()
+    crew_auth_stub.install(stub)
+    try:
+        yield stub
+    finally:
+        crew_auth_stub.uninstall()
 
 
 def _swap_database(url: str, name: str) -> str:

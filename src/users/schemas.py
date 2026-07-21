@@ -7,8 +7,12 @@ left untouched.
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from src.users.models import User, UserPreferences
 
 
 class UpdateProfileRequest(BaseModel):
@@ -33,3 +37,19 @@ class UserProfileDTO(BaseModel):
     is_active: bool
     created_at: datetime
     preferences: PreferencesDTO
+
+
+def to_preferences_dto(prefs: "UserPreferences") -> PreferencesDTO:
+    return PreferencesDTO(language=prefs.language, timezone=prefs.timezone)
+
+
+def to_profile_dto(user: "User") -> UserProfileDTO:
+    """Build the profile DTO. ``user.preferences`` must already be loaded."""
+    return UserProfileDTO(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        preferences=to_preferences_dto(user.preferences),
+    )

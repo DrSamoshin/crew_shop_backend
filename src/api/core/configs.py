@@ -22,9 +22,12 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     workers: int = 4
 
-    # OAuth providers (server-side ID-token verification)
-    google_client_id: str | None = None  # Google OAuth client ID (token `aud`)
-    apple_client_id: str | None = None  # Apple Services ID (token `aud`)
+    # crew_auth (platform identity provider). The service exchanges one-time codes here
+    # and verifies its RS256 access tokens locally against the published JWKS.
+    crew_auth_url: str = "https://auth.crewservices.org"
+    # Must match the RETURN_URIS_<SERVICE> key registered with crew_auth.
+    crew_auth_service_name: str = "crew_shop"
+    crew_auth_timeout: float = 5.0  # seconds, per server-to-server call
 
     # Admin S2S (crew_admin → admin API). Per-environment shared service token; unset
     # disables the admin API entirely (every request is rejected).
@@ -33,14 +36,6 @@ class Settings(BaseSettings):
     # Payment provider callback secret. The FakeProvider verifies webhook signatures with this
     # value; a real provider plugs its own scheme in. Unset → callbacks are rejected.
     payment_provider_secret: str | None = None
-
-    # App JWT / sessions (HS256, symmetric — single backend)
-    secret_key: str = "dev-insecure-secret-change-me-in-prod"  # >=32B; override via env
-    jwt_alg: str = "HS256"
-    jwt_iss: str = "crew-shop"
-    jwt_aud: str = "crew-shop"
-    access_token_ttl: int = 15 * 60  # seconds (~15 min)
-    refresh_token_ttl: int = 30 * 24 * 60 * 60  # seconds (~30 days)
 
     # Database - dev (simple URL string)
     database_url: str | None = None

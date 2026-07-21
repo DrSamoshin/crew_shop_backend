@@ -61,10 +61,8 @@ jobs:
             DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
             DATABASE_NAME=${{ secrets.DATABASE_NAME }}
             DATABASE_HOST=${{ secrets.DATABASE_HOST }}
-            SECRET_KEY=${{ secrets.SECRET_KEY }}
             CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
+            CREW_AUTH_URL=${{ secrets.CREW_AUTH_URL }}
 
       - name: Output deployment info
         run: |

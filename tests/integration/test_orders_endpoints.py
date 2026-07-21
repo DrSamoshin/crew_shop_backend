@@ -9,10 +9,10 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.api.core.configs import settings as app_settings
-from src.auth import sessions
 from src.catalog.models import Product, ProductCategory, ProductType
 from src.points.models import Point
 from src.users.models import User
+from tests.integration.crew_auth_stub import mint_access_token
 
 Maker = async_sessionmaker[AsyncSession]
 ADMIN_TOKEN = "test-service-token"
@@ -31,7 +31,7 @@ async def _setup(
     maker: Maker, *, point_type: str = "coffeeshop", point_active: bool = True, active: bool = True
 ) -> Env:
     async with maker() as s:
-        user = User(display_name="Buyer")
+        user = User(display_name="Buyer", auth_user_id=uuid.uuid4())
         point = Point(
             name="Crew Shop",
             address="addr",
@@ -60,17 +60,17 @@ async def _setup(
         )
         s.add_all([coffee, brewer])
         await s.flush()
-        access, _ = await sessions.create_session(s, user.id)
+        access = mint_access_token(user.auth_user_id)
         await s.commit()
         return Env(user.id, point.id, coffee.id, brewer.id, access)
 
 
 async def _new_user_token(maker: Maker) -> str:
     async with maker() as s:
-        user = User(display_name="Other")
+        user = User(display_name="Other", auth_user_id=uuid.uuid4())
         s.add(user)
         await s.flush()
-        access, _ = await sessions.create_session(s, user.id)
+        access = mint_access_token(user.auth_user_id)
         await s.commit()
         return access
 

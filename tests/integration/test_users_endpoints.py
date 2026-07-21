@@ -6,9 +6,8 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.auth import sessions
-from src.auth.models import OAuthAccount
 from src.users.models import User, UserPreferences
+from tests.integration.crew_auth_stub import mint_access_token
 
 Maker = async_sessionmaker[AsyncSession]
 
@@ -17,12 +16,11 @@ async def _authed_user(
     maker: Maker, *, display_name: str = "Anna", email: str | None = "anna@example.com"
 ) -> tuple[uuid.UUID, str]:
     async with maker() as s:
-        user = User(display_name=display_name, email=email)
+        user = User(display_name=display_name, email=email, auth_user_id=uuid.uuid4())
         s.add(user)
         await s.flush()
-        s.add(OAuthAccount(user_id=user.id, provider="google", provider_id=f"g-{uuid.uuid4()}"))
         s.add(UserPreferences(user_id=user.id))  # defaults: en / UTC
-        access, _ = await sessions.create_session(s, user.id)
+        access = mint_access_token(user.auth_user_id)
         await s.commit()
         return user.id, access
 
@@ -144,20 +142,20 @@ async def test_delete_account_hard_anonymizes(client_db: tuple[AsyncClient, Make
         assert user.email is None
         assert user.display_name.startswith("User-")
         assert user.is_active is False
-        oauth = await s.scalar(
-            select(func.count()).select_from(OAuthAccount).where(OAuthAccount.user_id == user_id)
-        )
+        # Detached from the platform identity: the same person signing in again lands
+        # in a genuinely new account rather than back inside this one.
+        assert user.auth_user_id is None
         prefs = await s.scalar(
             select(func.count())
             .select_from(UserPreferences)
             .where(UserPreferences.user_id == user_id)
         )
-        assert oauth == 0
         assert prefs == 0
 
-    # Sessions revoked -> the access token no longer authenticates.
+    # The token is still cryptographically valid, but it no longer resolves to an account.
     after = await client.get("/v1/users/me", headers=_auth(token))
     assert after.status_code == 401
+    assert after.json()["error"]["error_code"] == "AUTH_ACCOUNT_NOT_FOUND"
 
 
 async def test_delete_account_soft_deactivates(client_db: tuple[AsyncClient, Maker]) -> None:
@@ -172,13 +170,10 @@ async def test_delete_account_soft_deactivates(client_db: tuple[AsyncClient, Mak
         assert user is not None
         assert user.is_active is False
         assert user.email == "anna@example.com"  # preserved
-        oauth = await s.scalar(
-            select(func.count()).select_from(OAuthAccount).where(OAuthAccount.user_id == user_id)
-        )
+        assert user.auth_user_id is not None  # the anchor survives a reversible deactivation
         prefs = await s.scalar(
             select(func.count())
             .select_from(UserPreferences)
             .where(UserPreferences.user_id == user_id)
         )
-        assert oauth == 1  # preserved for recovery
         assert prefs == 1

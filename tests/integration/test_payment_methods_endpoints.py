@@ -9,9 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.api.core.configs import settings as app_settings
-from src.auth import sessions
 from src.payments.models import PaymentMethod
 from src.users.models import User
+from tests.integration.crew_auth_stub import mint_access_token
 
 Maker = async_sessionmaker[AsyncSession]
 
@@ -24,10 +24,10 @@ class Env:
 
 async def _authed_user(maker: Maker) -> Env:
     async with maker() as s:
-        user = User(display_name="User")
+        user = User(display_name="User", auth_user_id=uuid.uuid4())
         s.add(user)
         await s.flush()
-        access, _ = await sessions.create_session(s, user.id)
+        access = mint_access_token(user.auth_user_id)
         await s.commit()
         return Env(user.id, access)
 

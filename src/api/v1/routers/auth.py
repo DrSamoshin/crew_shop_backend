@@ -1,9 +1,9 @@
-"""Auth endpoints: login / register / token refresh / logout.
+"""Auth endpoints: session / refresh / logout.
 
-Tokens are delivered in the response body (no cookies). The access token is sent
-as a bearer header by the client; the refresh token is held by the client and
-posted back to ``/token/refresh``. Sessions are still server-side, so logout and
-refresh rotation (with reuse detection) enforce immediate revocation.
+crew_shop is not an identity provider. The browser signs in at crew_auth's hosted login
+and comes back to the SPA with a one-time code; the SPA posts it here and crew_shop
+redeems it server-to-server. There is no ``/register``: an identity crew_auth has never
+seen simply becomes a new user.
 """
 
 from typing import Annotated
@@ -11,69 +11,72 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.core.configs import settings
 from src.api.core.database import get_db
-from src.api.v1.schemas.auth import LoginRequest, RefreshRequest, RegisterRequest, TokenResponse
-from src.auth import service, sessions, tokens
-from src.auth.dependencies import require_session
-from src.auth.models import Session
+from src.api.v1.schemas.auth import (
+    RefreshRequest,
+    SessionRequest,
+    SessionResponse,
+    TokenResponse,
+)
+from src.auth import crew_auth, service
+from src.auth.dependencies import require_auth
+from src.users import service as users_service
+from src.users.models import User
+from src.users.schemas import to_profile_dto
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
-def _token_response(result: service.AuthResult) -> TokenResponse:
-    return TokenResponse(
-        user_id=result.user_id,
+@router.post(
+    "/session",
+    response_model=SessionResponse,
+    summary="Redeem a crew_auth login code for a session",
+)
+async def create_session(payload: SessionRequest, db: DbDep) -> SessionResponse:
+    result = await service.sign_in(db, payload.code)
+    profile = await users_service.get_me(db, result.user.id)
+    return SessionResponse(
         access_token=result.access_token,
         refresh_token=result.refresh_token,
-        expires_in=settings.access_token_ttl,
+        expires_in=result.expires_in,
         is_new_user=result.is_new_user,
+        user=to_profile_dto(profile),
     )
 
 
-@router.post("/login", response_model=TokenResponse, summary="Sign in with a provider token")
-async def login(payload: LoginRequest, db: DbDep) -> TokenResponse:
-    result = await service.login(db, payload.provider, payload.token)
-    return _token_response(result)
-
-
 @router.post(
-    "/register",
+    "/refresh",
     response_model=TokenResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create an account from a verified provider identity",
+    summary="Exchange a refresh token for a rotated pair",
 )
-async def register(payload: RegisterRequest, db: DbDep) -> TokenResponse:
-    result = await service.register(db, payload.provider, payload.token, payload.name)
-    return _token_response(result)
+async def refresh(payload: RefreshRequest) -> TokenResponse:
+    """Thin pass-through to crew_auth.
 
-
-@router.post(
-    "/token/refresh",
-    response_model=TokenResponse,
-    summary="Exchange a refresh token for a new access token",
-)
-async def refresh_token(payload: RefreshRequest, db: DbDep) -> TokenResponse:
-    access, new_refresh = await sessions.refresh(db, payload.refresh_token)
-    claims = tokens.decode(access, expected_type=tokens.TOKEN_TYPE_ACCESS)
+    It exists only because crew_auth wires no CORS and the browser therefore cannot call
+    it directly. crew_shop holds no refresh state and must not interpret the token.
+    """
+    tokens = await crew_auth.refresh_tokens(payload.refresh_token)
     return TokenResponse(
-        user_id=claims["sub"],
-        access_token=access,
-        refresh_token=new_refresh,
-        expires_in=settings.access_token_ttl,
-        is_new_user=False,
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        expires_in=tokens.expires_in,
     )
 
 
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Revoke the current session",
+    summary="End the client's session",
 )
-async def logout(
-    db: DbDep,
-    session: Annotated[Session, Depends(require_session)],
-) -> None:
-    await sessions.logout(db, session.id)
+async def logout(user: Annotated[User, Depends(require_auth)]) -> None:
+    """Tell the client to discard its tokens. There is nothing server-side to revoke.
+
+    crew_auth's ``/logout`` kills only its own SSO cookie and deliberately does not
+    revoke refresh tokens held by services, and it exposes no revoke endpoint — so the
+    refresh token stays valid for its 30 days. A full sign-out additionally requires
+    navigating the browser to crew_auth's ``/logout``. A local denylist is deliberately
+    not used: it would reintroduce the per-request session read this design removed.
+    """
+    return None

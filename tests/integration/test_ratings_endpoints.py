@@ -7,11 +7,11 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.auth import sessions
 from src.catalog.models import Product, ProductCategory, ProductType
 from src.orders.enums import OrderStatus, OrderType
 from src.orders.models import Order, OrderProduct
 from src.users.models import User
+from tests.integration.crew_auth_stub import mint_access_token
 
 Maker = async_sessionmaker[AsyncSession]
 
@@ -27,7 +27,7 @@ class Env:
 async def _setup(maker: Maker, *, order_status: str = OrderStatus.COMPLETED.value) -> Env:
     """Seed a user + two products; the first is referenced by an order of ``order_status``."""
     async with maker() as s:
-        user = User(display_name="Rater")
+        user = User(display_name="Rater", auth_user_id=uuid.uuid4())
         product_type = ProductType(name=f"t-{uuid.uuid4()}")
         category = ProductCategory(name=f"c-{uuid.uuid4()}", product_type=product_type)
         s.add_all([user, category, product_type])
@@ -65,7 +65,7 @@ async def _setup(maker: Maker, *, order_status: str = OrderStatus.COMPLETED.valu
         s.add(order)
         await s.flush()
 
-        access, _ = await sessions.create_session(s, user.id)
+        access = mint_access_token(user.auth_user_id)
         await s.commit()
         return Env(user.id, product.id, other.id, access)
 

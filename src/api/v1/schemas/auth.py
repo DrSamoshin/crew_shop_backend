@@ -1,48 +1,51 @@
-"""Auth request/response schemas."""
+"""Auth request/response schemas.
 
-import uuid
+crew_shop issues no tokens of its own: every token in these bodies is crew_auth's,
+passed through. The access token is sent back as a bearer header by the client; the
+refresh token is held by the client and posted to ``/v1/auth/refresh``.
+"""
+
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# `provider` is a plain string (not the Provider enum) so an unknown value reaches
-# verify_provider and surfaces as AUTH_INVALID_PROVIDER (400), not a 422 validation error.
+from src.users.schemas import UserProfileDTO
 
 
-class LoginRequest(BaseModel):
-    """Sign in with a provider ID token."""
+class SessionRequest(BaseModel):
+    """Redeem the one-time code crew_auth appended to the callback URL."""
 
-    provider: str
-    token: str = Field(min_length=1)
-
-
-class RegisterRequest(BaseModel):
-    """Create an account from a verified provider identity.
-
-    ``name`` is an optional display-name hint (e.g. Apple's first-auth name); the
-    backend re-verifies ``token`` and never trusts client-sent identity.
-    """
-
-    provider: str
-    token: str = Field(min_length=1)
-    name: str | None = None
+    code: str = Field(min_length=1)
 
 
 class RefreshRequest(BaseModel):
-    """Exchange a refresh token for a new access/refresh pair."""
+    """Exchange a refresh token for a rotated pair. The presented token is revoked."""
 
     refresh_token: str = Field(min_length=1)
 
 
-class TokenResponse(BaseModel):
-    """Token response body. Both tokens are returned in the body (no cookies)."""
+class SessionResponse(BaseModel):
+    """A signed-in session: crew_auth's tokens plus the caller's shop profile.
 
-    user_id: uuid.UUID
+    ``is_new_user`` tells the client to prompt for a display name — crew_auth holds no
+    name, so a fresh account starts with a generated placeholder.
+    """
+
     access_token: str
     refresh_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
     is_new_user: bool
+    user: UserProfileDTO
 
 
-__all__ = ["LoginRequest", "RefreshRequest", "RegisterRequest", "TokenResponse"]
+class TokenResponse(BaseModel):
+    """A rotated token pair. Carries no profile — the caller already has one."""
+
+    access_token: str
+    refresh_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+
+
+__all__ = ["RefreshRequest", "SessionRequest", "SessionResponse", "TokenResponse"]

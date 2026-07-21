@@ -1,77 +1,56 @@
-"""Auth orchestration: provider verification + persistence + session issuance."""
+"""Auth orchestration: redeem a crew_auth login code and anchor it to a shop account."""
 
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth import providers, sessions
-from src.auth.exceptions import OAuthAccountExistsError, UserNotFoundError
-from src.auth.identity import VerifiedIdentity
-from src.auth.models import OAuthAccount
+from src.auth import crew_auth
+from src.users.models import User
 from src.users.service import create_user
 
 
 @dataclass(frozen=True, slots=True)
-class AuthResult:
-    """Outcome of login/register; the endpoint turns it into the response body + cookie."""
+class SignInResult:
+    """Outcome of a sign-in; the endpoint turns it into the response body."""
 
-    user_id: uuid.UUID
+    user: User
     access_token: str
     refresh_token: str
+    expires_in: int
     is_new_user: bool
 
 
-async def _get_oauth_account(
-    db: AsyncSession, provider: str, provider_id: str
-) -> OAuthAccount | None:
-    result = await db.execute(
-        select(OAuthAccount).where(
-            OAuthAccount.provider == provider,
-            OAuthAccount.provider_id == provider_id,
+def _initial_display_name(auth_user_id: uuid.UUID) -> str:
+    """Placeholder name for a brand-new account.
+
+    crew_auth holds no name and has no plan to, so the client prompts for one on first
+    sign-in and saves it through ``PUT /v1/users/me``.
+    """
+    return f"User-{auth_user_id.hex[:8]}"
+
+
+async def sign_in(db: AsyncSession, code: str) -> SignInResult:
+    """Exchange a one-time login code and return the caller's account.
+
+    There is no separate registration: an identity crew_auth has never seen simply
+    becomes a new user, so this upserts on ``auth_user_id`` and reports ``is_new_user``
+    for the client's first-sign-in prompt.
+    """
+    tokens = await crew_auth.exchange_code(code)
+
+    user = await db.scalar(select(User).where(User.auth_user_id == tokens.user_id))
+    is_new = user is None
+    if user is None:
+        user = await create_user(
+            db, _initial_display_name(tokens.user_id), auth_user_id=tokens.user_id
         )
+
+    return SignInResult(
+        user=user,
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        expires_in=tokens.expires_in,
+        is_new_user=is_new,
     )
-    return result.scalar_one_or_none()
-
-
-async def login(db: AsyncSession, provider: str, token: str) -> AuthResult:
-    """Verify the provider token and sign in an existing user."""
-    identity = providers.verify_provider(provider, token)
-    account = await _get_oauth_account(db, identity.provider, identity.provider_id)
-    if account is None:
-        raise UserNotFoundError()
-    access, refresh = await sessions.create_session(db, account.user_id)
-    return AuthResult(account.user_id, access, refresh, is_new_user=False)
-
-
-async def register(db: AsyncSession, provider: str, token: str, name: str | None) -> AuthResult:
-    """Re-verify the provider token and create user + OAuth account + preferences."""
-    identity = providers.verify_provider(provider, token)
-    if await _get_oauth_account(db, identity.provider, identity.provider_id) is not None:
-        raise OAuthAccountExistsError()
-
-    user = await create_user(db, _display_name(identity, name))
-    db.add(
-        OAuthAccount(
-            user_id=user.id,
-            provider=identity.provider,
-            provider_id=identity.provider_id,
-            provider_email=identity.email,
-            provider_name=identity.name,
-        )
-    )
-    await db.flush()
-    access, refresh = await sessions.create_session(db, user.id)
-    return AuthResult(user.id, access, refresh, is_new_user=True)
-
-
-async def delete_oauth_account(db: AsyncSession, user_id: uuid.UUID) -> None:
-    """Delete a user's OAuth identity (used by account hard-delete)."""
-    await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
-    await db.flush()
-
-
-def _display_name(identity: VerifiedIdentity, name: str | None) -> str:
-    chosen = (name or identity.name or "").strip()
-    return chosen or f"User-{uuid.uuid4().hex[:8]}"
